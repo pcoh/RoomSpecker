@@ -165,13 +165,14 @@ const RoomDesigner: React.FC = () => {
       y: p1.y + t * dy
     };
   };
-
-  const findClosestLine = (mousePos: Point): { roomId: string, wallIndex: number, point: Point, t: number } | null => {
+  
+  
+  const findClosestLine = (mousePos: Point, roomToExclude?: string): { roomId: string, wallIndex: number, point: Point, t: number } | null => {
     let closestDist = Infinity;
     let result: { roomId: string, wallIndex: number, point: Point, t: number } | null = null;
 
     for (const room of rooms) {
-      if (!room.isComplete || room.points.length < 2) continue;
+      if (!room.isComplete || room.points.length < 2 || room.id === roomToExclude) continue;
 
       for (let i = 0; i < room.points.length; i++) {
         const p1 = room.points[i];
@@ -216,18 +217,49 @@ const RoomDesigner: React.FC = () => {
     return null;
   };
 
-  const findNearestPoint = (mousePos: Point): {roomId: string, index: number} | null => {
+  const mainRoom = useMemo(() => {
+    return rooms.find(room => room.isMain);
+  }, [rooms]);
+
+  // const findNearestPoint = (mousePos: Point): {roomId: string, index: number} | null => {
+  //   for (const room of rooms) {
+  //     for (let i = 0; i < room.points.length; i++) {
+  //       const point = room.points[i];
+  //       const distance = Math.sqrt(
+  //         Math.pow(mousePos.x - point.x, 2) + Math.pow(mousePos.y - point.y, 2)
+  //       );
+  //       if (distance < POINT_RADIUS * 2 / scale) {
+  //         return { roomId: room.id, index: i };
+  //       }
+  //     }
+  //   }
+  //   return null;
+  // };
+
+  const findNearestPoint = (mousePos: Point, roomToExclude?: string): {roomId: string, index: number, point: Point} | null => {
+    let closestDist = Infinity;
+    let result: {roomId: string, index: number, point: Point} | null = null;
+  
     for (const room of rooms) {
+      if (room.id === roomToExclude) continue;
+      
       for (let i = 0; i < room.points.length; i++) {
         const point = room.points[i];
         const distance = Math.sqrt(
           Math.pow(mousePos.x - point.x, 2) + Math.pow(mousePos.y - point.y, 2)
         );
-        if (distance < POINT_RADIUS * 2 / scale) {
-          return { roomId: room.id, index: i };
+        
+        if (distance < closestDist) {
+          closestDist = distance;
+          result = { roomId: room.id, index: i, point };
         }
       }
     }
+  
+    if (closestDist < SNAP_DISTANCE / scale && result) {
+      return result;
+    }
+    
     return null;
   };
 
@@ -1761,14 +1793,101 @@ const updateAngle = (roomId: string, index: number, newAngle: number) => {
     setLastPanPosition(null);
   };
 
+  // const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  //   if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
+
+  //   const canvas = canvasRef.current;
+  //   if (!canvas) return;
+
+  //   const mousePos = getMousePosition(e);
+
+  //   if (activeRoom.points.length === 0) {
+  //     if (activeRoom.isMain) {
+  //       setRooms(rooms.map(room => 
+  //         room.id === activeRoom.id 
+  //           ? { ...room, points: [{ x: 0, y: 0 }] }
+  //           : room
+  //       ));
+        
+  //       const rect = canvas.getBoundingClientRect();
+  //       const screenX = e.clientX - rect.left;
+  //       const screenY = e.clientY - rect.top;
+  //       setPan({ 
+  //         x: screenX, 
+  //         y: canvas.height - screenY
+  //       });
+  //     } else {
+  //       const wallPoint = findClosestLine(mousePos);
+  //       if (!wallPoint) {
+  //         alert('Secondary room must start from an existing wall');
+  //         return;
+  //       }
+        
+  //       setRooms(rooms.map(room => 
+  //         room.id === activeRoom.id 
+  //           ? { ...room, points: [mousePos] }
+  //           : room
+  //       ));
+  //     }
+  //     return;
+  //   }
+
+  //   if (activeRoom.points.length > 2) {
+  //     const firstPoint = activeRoom.points[0];
+  //     const distance = Math.sqrt(
+  //       Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
+  //     );
+
+  //     if (distance < SNAP_DISTANCE / scale) {
+  //       setRooms(rooms.map(room => 
+  //         room.id === activeRoom.id 
+  //           ? { ...room, isComplete: true }
+  //           : room
+  //       ));
+  //       setIsAddingSecondaryRoom(false);
+  //       return;
+  //     }
+  //   }
+
+  //   if (!activeRoom.isMain && activeRoom.points.length > 0) {
+  //     const wallPoint = findClosestLine(mousePos);
+  //     if (wallPoint) {
+  //       mousePos.roomId = wallPoint.roomId;
+  //     }
+  //   }
+
+  //   setRooms(rooms.map(room => 
+  //     room.id === activeRoom.id 
+  //       ? { ...room, points: [...room.points, mousePos] }
+  //       : room
+  //   ));
+  // };
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
-
+  
     const canvas = canvasRef.current;
     if (!canvas) return;
-
-    const mousePos = getMousePosition(e);
-
+  
+    let mousePos = getMousePosition(e);
+  
+    // For secondary rooms, implement snapping to main room points or lines
+    if (!activeRoom.isMain) {
+      // Check if we should snap to an existing vertex first
+      const nearestPoint = findNearestPoint(mousePos, activeRoom.id);
+      if (nearestPoint) {
+        // Snap to the nearest point
+        mousePos = { x: nearestPoint.point.x, y: nearestPoint.point.y };
+      } else {
+        // If no point to snap to, try to snap to a line
+        const closestLine = findClosestLine(mousePos, activeRoom.id);
+        if (closestLine) {
+          // Snap to the closest point on the line
+          mousePos = closestLine.point;
+        }
+      }
+    }
+  
     if (activeRoom.points.length === 0) {
       if (activeRoom.isMain) {
         setRooms(rooms.map(room => 
@@ -1799,13 +1918,13 @@ const updateAngle = (roomId: string, index: number, newAngle: number) => {
       }
       return;
     }
-
+  
     if (activeRoom.points.length > 2) {
       const firstPoint = activeRoom.points[0];
       const distance = Math.sqrt(
         Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
       );
-
+  
       if (distance < SNAP_DISTANCE / scale) {
         setRooms(rooms.map(room => 
           room.id === activeRoom.id 
@@ -1816,14 +1935,14 @@ const updateAngle = (roomId: string, index: number, newAngle: number) => {
         return;
       }
     }
-
+  
     if (!activeRoom.isMain && activeRoom.points.length > 0) {
       const wallPoint = findClosestLine(mousePos);
       if (wallPoint) {
         mousePos.roomId = wallPoint.roomId;
       }
     }
-
+  
     setRooms(rooms.map(room => 
       room.id === activeRoom.id 
         ? { ...room, points: [...room.points, mousePos] }
