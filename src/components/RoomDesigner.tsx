@@ -606,13 +606,22 @@ const RoomDesigner: React.FC = () => {
   };
 
   const updatePoint = (roomId: string, index: number, newX: number, newY: number) => {
-    setRooms(rooms.map(room => {
-      if (room.id !== roomId) return room;
-
-      const newPoints = [...room.points];
+    // Get the room to be updated
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Store the old points for door/window updates
+    const oldPoints = [...room.points];
+    
+    // Create a copy of all rooms
+    const newRooms = rooms.map(r => {
+      if (r.id !== roomId) return r;
+      
+      // Create new points array with updated position
+      const newPoints = [...r.points];
       if (index === 0) {
-        const dx = newX - room.points[0].x;
-        const dy = newY - room.points[0].y;
+        const dx = newX - r.points[0].x;
+        const dy = newY - r.points[0].y;
         newPoints.forEach((point, i) => {
           point.x += dx;
           point.y += dy;
@@ -621,64 +630,681 @@ const RoomDesigner: React.FC = () => {
         newPoints[index] = { x: newX, y: newY };
       }
       
-      return { ...room, points: newPoints };
-    }));
+      return { 
+        ...r, 
+        points: newPoints,
+      };
+    });
+    
+    // Get the updated room with new points
+    const updatedRoom = newRooms.find(r => r.id === roomId);
+    if (!updatedRoom) return;
+    
+    // For completed rooms with doors/windows, update them
+    if (updatedRoom.isComplete && (updatedRoom.doors.length > 0 || updatedRoom.windows.length > 0)) {
+      // Update doors within this room
+      const updatedDoors = updatedRoom.doors.map(door => {
+        const wallIndex = door.wallIndex;
+        
+        // Skip doors on non-existent walls
+        if (wallIndex >= oldPoints.length || wallIndex >= updatedRoom.points.length) {
+          return door;
+        }
+        
+        // Get new wall vertices
+        const newStartVertex = updatedRoom.points[wallIndex];
+        const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+        
+        // Calculate new wall vector
+        const newWallDx = newEndVertex.x - newStartVertex.x;
+        const newWallDy = newEndVertex.y - newStartVertex.y;
+        const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+        
+        // Skip if wall has zero length
+        if (newWallLength === 0) return door;
+        
+        // Calculate normalized direction vector for the new wall
+        const newDirX = newWallDx / newWallLength;
+        const newDirY = newWallDy / newWallLength;
+        
+        // Keep door position (distance from wall start) constant
+        const position = door.position;
+        
+        // Calculate new start point - absolute distance from wall start
+        const newStartPoint = {
+          x: newStartVertex.x + newDirX * position,
+          y: newStartVertex.y + newDirY * position
+        };
+        
+        // Calculate new end point - keeping the absolute width
+        const newEndPoint = {
+          x: newStartPoint.x + newDirX * door.width,
+          y: newStartPoint.y + newDirY * door.width
+        };
+        
+        // Check if the door now extends beyond the wall
+        if (position + door.width > newWallLength) {
+          // Adjust to fit within the wall
+          return {
+            ...door,
+            position: Math.max(0, newWallLength - door.width),
+            startPoint: {
+              x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+              y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+            },
+            endPoint: {
+              x: newEndVertex.x,
+              y: newEndVertex.y
+            }
+          };
+        }
+        
+        return {
+          ...door,
+          startPoint: newStartPoint,
+          endPoint: newEndPoint
+        };
+      });
+      
+      // Update windows within this room
+      const updatedWindows = updatedRoom.windows.map(window => {
+        const wallIndex = window.wallIndex;
+        
+        // Skip windows on non-existent walls
+        if (wallIndex >= oldPoints.length || wallIndex >= updatedRoom.points.length) {
+          return window;
+        }
+        
+        // Get new wall vertices
+        const newStartVertex = updatedRoom.points[wallIndex];
+        const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+        
+        // Calculate new wall vector
+        const newWallDx = newEndVertex.x - newStartVertex.x;
+        const newWallDy = newEndVertex.y - newStartVertex.y;
+        const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+        
+        // Skip if wall has zero length
+        if (newWallLength === 0) return window;
+        
+        // Calculate normalized direction vector for the new wall
+        const newDirX = newWallDx / newWallLength;
+        const newDirY = newWallDy / newWallLength;
+        
+        // Keep window position (distance from wall start) constant
+        const position = window.position;
+        
+        // Calculate new start point - absolute distance from wall start
+        const newStartPoint = {
+          x: newStartVertex.x + newDirX * position,
+          y: newStartVertex.y + newDirY * position
+        };
+        
+        // Calculate new end point - keeping the absolute width
+        const newEndPoint = {
+          x: newStartPoint.x + newDirX * window.width,
+          y: newStartPoint.y + newDirY * window.width
+        };
+        
+        // Check if the window now extends beyond the wall
+        if (position + window.width > newWallLength) {
+          // Adjust to fit within the wall
+          return {
+            ...window,
+            position: Math.max(0, newWallLength - window.width),
+            startPoint: {
+              x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
+              y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
+            },
+            endPoint: {
+              x: newEndVertex.x,
+              y: newEndVertex.y
+            }
+          };
+        }
+        
+        return {
+          ...window,
+          startPoint: newStartPoint,
+          endPoint: newEndPoint
+        };
+      });
+      
+      // Update the room with new doors and windows
+      const finalRooms = newRooms.map(r => {
+        if (r.id !== roomId) return r;
+        return {
+          ...r,
+          doors: updatedDoors,
+          windows: updatedWindows
+        };
+      });
+      
+      // Set the final state with all updates in one go
+      setRooms(finalRooms);
+    } else {
+      // If no doors/windows or room not complete, just update the points
+      setRooms(newRooms);
+    }
   };
 
-  const updateWallLength = (roomId: string, index: number, newLength: number) => {
-    setRooms(rooms.map(room => {
-      if (room.id !== roomId) return room;
 
-      const newPoints = [...room.points];
-      const currentPoint = room.points[index];
-      const nextPoint = room.points[(index + 1) % room.points.length];
+
+  const updateWallLength = (roomId: string, index: number, newLength: number) => {
+    // Get the room to be updated
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Store the old points for door/window updates
+    const oldPoints = [...room.points];
+    
+    // Create a copy of all rooms
+    const newRooms = rooms.map(r => {
+      if (r.id !== roomId) return r;
+      
+      const newPoints = [...r.points];
+      const currentPoint = r.points[index];
+      const nextPoint = r.points[(index + 1) % r.points.length];
       
       const angle = Math.atan2(
         nextPoint.y - currentPoint.y,
         nextPoint.x - currentPoint.x
       );
       
-      newPoints[(index + 1) % room.points.length] = {
+      newPoints[(index + 1) % r.points.length] = {
         x: currentPoint.x + Math.cos(angle) * newLength,
         y: currentPoint.y + Math.sin(angle) * newLength
       };
       
-      return { ...room, points: newPoints };
-    }));
+      return { 
+        ...r, 
+        points: newPoints,
+      };
+    });
+    
+    // Get the updated room with new points
+    const updatedRoom = newRooms.find(r => r.id === roomId);
+    if (!updatedRoom) return;
+    
+    // For completed rooms with doors/windows, update them
+    if (updatedRoom.isComplete && (updatedRoom.doors.length > 0 || updatedRoom.windows.length > 0)) {
+      // Update doors within this room
+      const updatedDoors = updatedRoom.doors.map(door => {
+        const wallIndex = door.wallIndex;
+        
+        // Skip doors that aren't on the affected wall
+        if (wallIndex !== index) return door;
+        
+        // Get new wall vertices
+        const newStartVertex = updatedRoom.points[wallIndex];
+        const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+        
+        // Calculate new wall vector
+        const newWallDx = newEndVertex.x - newStartVertex.x;
+        const newWallDy = newEndVertex.y - newStartVertex.y;
+        const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+        
+        // Skip if wall has zero length
+        if (newWallLength === 0) return door;
+        
+        // Calculate normalized direction vector for the new wall
+        const newDirX = newWallDx / newWallLength;
+        const newDirY = newWallDy / newWallLength;
+        
+        // Keep door position (distance from wall start) constant
+        const position = door.position;
+        
+        // Calculate new start point - absolute distance from wall start
+        const newStartPoint = {
+          x: newStartVertex.x + newDirX * position,
+          y: newStartVertex.y + newDirY * position
+        };
+        
+        // Calculate new end point - keeping the absolute width
+        const newEndPoint = {
+          x: newStartPoint.x + newDirX * door.width,
+          y: newStartPoint.y + newDirY * door.width
+        };
+        
+        // Check if the door now extends beyond the wall
+        if (position + door.width > newWallLength) {
+          // Adjust to fit within the wall
+          return {
+            ...door,
+            position: Math.max(0, newWallLength - door.width),
+            startPoint: {
+              x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+              y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+            },
+            endPoint: {
+              x: newEndVertex.x,
+              y: newEndVertex.y
+            }
+          };
+        }
+        
+        return {
+          ...door,
+          startPoint: newStartPoint,
+          endPoint: newEndPoint
+        };
+      });
+      
+      // Update windows within this room
+      const updatedWindows = updatedRoom.windows.map(window => {
+        const wallIndex = window.wallIndex;
+        
+        // Skip windows that aren't on the affected wall
+        if (wallIndex !== index) return window;
+        
+        // Get new wall vertices
+        const newStartVertex = updatedRoom.points[wallIndex];
+        const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+        
+        // Calculate new wall vector
+        const newWallDx = newEndVertex.x - newStartVertex.x;
+        const newWallDy = newEndVertex.y - newStartVertex.y;
+        const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+        
+        // Skip if wall has zero length
+        if (newWallLength === 0) return window;
+        
+        // Calculate normalized direction vector for the new wall
+        const newDirX = newWallDx / newWallLength;
+        const newDirY = newWallDy / newWallLength;
+        
+        // Keep window position (distance from wall start) constant
+        const position = window.position;
+        
+        // Calculate new start point - absolute distance from wall start
+        const newStartPoint = {
+          x: newStartVertex.x + newDirX * position,
+          y: newStartVertex.y + newDirY * position
+        };
+        
+        // Calculate new end point - keeping the absolute width
+        const newEndPoint = {
+          x: newStartPoint.x + newDirX * window.width,
+          y: newStartPoint.y + newDirY * window.width
+        };
+        
+        // Check if the window now extends beyond the wall
+        if (position + window.width > newWallLength) {
+          // Adjust to fit within the wall
+          return {
+            ...window,
+            position: Math.max(0, newWallLength - window.width),
+            startPoint: {
+              x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
+              y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
+            },
+            endPoint: {
+              x: newEndVertex.x,
+              y: newEndVertex.y
+            }
+          };
+        }
+        
+        return {
+          ...window,
+          startPoint: newStartPoint,
+          endPoint: newEndPoint
+        };
+      });
+      
+      // Update the room with new doors and windows
+      const finalRooms = newRooms.map(r => {
+        if (r.id !== roomId) return r;
+        return {
+          ...r,
+          doors: updatedDoors,
+          windows: updatedWindows
+        };
+      });
+      
+      // Set the final state with all updates in one go
+      setRooms(finalRooms);
+    } else {
+      // If no doors/windows or room not complete, just update the points
+      setRooms(newRooms);
+    }
   };
 
-  const updateAngle = (roomId: string, index: number, newAngle: number) => {
-    if (isNaN(newAngle)) return;
+const updateAngle = (roomId: string, index: number, newAngle: number) => {
+  if (isNaN(newAngle)) return;
+  
+  // Get the room to be updated
+  const room = rooms.find(r => r.id === roomId);
+  if (!room) return;
+  
+  // Store the old points for door/window updates
+  const oldPoints = [...room.points];
+  
+  // Create a copy of all rooms
+  const newRooms = rooms.map(r => {
+    if (r.id !== roomId) return r;
     
+    const newPoints = [...r.points];
+    const currentPoint = r.points[index];
+    const prevPoint = r.points[(index - 1 + r.points.length) % r.points.length];
+    const nextPoint = r.points[(index + 1) % r.points.length];
+    
+    const angle1 = Math.atan2(
+      prevPoint.y - currentPoint.y,
+      prevPoint.x - currentPoint.x
+    );
+    
+    const angleRad = (-newAngle * Math.PI) / 180;
+    const newAngleRad = angle1 + angleRad;
+    
+    const currentWallLength = Math.sqrt(
+      Math.pow(nextPoint.x - currentPoint.x, 2) + 
+      Math.pow(nextPoint.y - currentPoint.y, 2)
+    );
+    
+    newPoints[(index + 1) % r.points.length] = {
+      x: currentPoint.x + currentWallLength * Math.cos(newAngleRad),
+      y: currentPoint.y + currentWallLength * Math.sin(newAngleRad)
+    };
+    
+    return { 
+      ...r, 
+      points: newPoints,
+    };
+  });
+  
+  // Get the affected walls
+  const wallIndex1 = (index - 1 + room.points.length) % room.points.length;
+  const wallIndex2 = index;
+  
+  // Get the updated room with new points
+  const updatedRoom = newRooms.find(r => r.id === roomId);
+  if (!updatedRoom) return;
+  
+  // For completed rooms with doors/windows, update them
+  if (updatedRoom.isComplete && (updatedRoom.doors.length > 0 || updatedRoom.windows.length > 0)) {
+    // Update doors within this room
+    const updatedDoors = updatedRoom.doors.map(door => {
+      const wallIndex = door.wallIndex;
+      
+      // Skip doors that aren't on the affected walls
+      if (wallIndex !== wallIndex1 && wallIndex !== wallIndex2) return door;
+      
+      // Get new wall vertices
+      const newStartVertex = updatedRoom.points[wallIndex];
+      const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+      
+      // Calculate new wall vector
+      const newWallDx = newEndVertex.x - newStartVertex.x;
+      const newWallDy = newEndVertex.y - newStartVertex.y;
+      const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+      
+      // Skip if wall has zero length
+      if (newWallLength === 0) return door;
+      
+      // Calculate normalized direction vector for the new wall
+      const newDirX = newWallDx / newWallLength;
+      const newDirY = newWallDy / newWallLength;
+      
+      // Keep door position (distance from wall start) constant
+      const position = door.position;
+      
+      // Calculate new start point - absolute distance from wall start
+      const newStartPoint = {
+        x: newStartVertex.x + newDirX * position,
+        y: newStartVertex.y + newDirY * position
+      };
+      
+      // Calculate new end point - keeping the absolute width
+      const newEndPoint = {
+        x: newStartPoint.x + newDirX * door.width,
+        y: newStartPoint.y + newDirY * door.width
+      };
+      
+      // Check if the door now extends beyond the wall
+      if (position + door.width > newWallLength) {
+        // Adjust to fit within the wall
+        return {
+          ...door,
+          position: Math.max(0, newWallLength - door.width),
+          startPoint: {
+            x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+            y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+          },
+          endPoint: {
+            x: newEndVertex.x,
+            y: newEndVertex.y
+          }
+        };
+      }
+      
+      return {
+        ...door,
+        startPoint: newStartPoint,
+        endPoint: newEndPoint
+      };
+    });
+    
+    // Update windows within this room
+    const updatedWindows = updatedRoom.windows.map(window => {
+      const wallIndex = window.wallIndex;
+      
+      // Skip windows that aren't on the affected walls
+      if (wallIndex !== wallIndex1 && wallIndex !== wallIndex2) return window;
+      
+      // Get new wall vertices
+      const newStartVertex = updatedRoom.points[wallIndex];
+      const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+      
+      // Calculate new wall vector
+      const newWallDx = newEndVertex.x - newStartVertex.x;
+      const newWallDy = newEndVertex.y - newStartVertex.y;
+      const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+      
+      // Skip if wall has zero length
+      if (newWallLength === 0) return window;
+      
+      // Calculate normalized direction vector for the new wall
+      const newDirX = newWallDx / newWallLength;
+      const newDirY = newWallDy / newWallLength;
+      
+      // Keep window position (distance from wall start) constant
+      const position = window.position;
+      
+      // Calculate new start point - absolute distance from wall start
+      const newStartPoint = {
+        x: newStartVertex.x + newDirX * position,
+        y: newStartVertex.y + newDirY * position
+      };
+      
+      // Calculate new end point - keeping the absolute width
+      const newEndPoint = {
+        x: newStartPoint.x + newDirX * window.width,
+        y: newStartPoint.y + newDirY * window.width
+      };
+      
+      // Check if the window now extends beyond the wall
+      if (position + window.width > newWallLength) {
+        // Adjust to fit within the wall
+        return {
+          ...window,
+          position: Math.max(0, newWallLength - window.width),
+          startPoint: {
+            x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
+            y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
+          },
+          endPoint: {
+            x: newEndVertex.x,
+            y: newEndVertex.y
+          }
+        };
+      }
+      
+      return {
+        ...window,
+        startPoint: newStartPoint,
+        endPoint: newEndPoint
+      };
+    });
+    
+    // Update the room with new doors and windows
+    const finalRooms = newRooms.map(r => {
+      if (r.id !== roomId) return r;
+      return {
+        ...r,
+        doors: updatedDoors,
+        windows: updatedWindows
+      };
+    });
+    
+    // Set the final state with all updates in one go
+    setRooms(finalRooms);
+  } else {
+    // If no doors/windows or room not complete, just update the points
+    setRooms(newRooms);
+  }
+};
+
+  const updateDoorsAndWindows = (roomId: string, newPoints: Point[], oldPoints: Point[]) => {
     setRooms(rooms.map(room => {
       if (room.id !== roomId) return room;
-
-      const newPoints = [...room.points];
-      const currentPoint = room.points[index];
-      const prevPoint = room.points[(index - 1 + room.points.length) % room.points.length];
-      const nextPoint = room.points[(index + 1) % room.points.length];
-
-      const angle1 = Math.atan2(
-        prevPoint.y - currentPoint.y,
-        prevPoint.x - currentPoint.x
-      );
-
-      const angleRad = (-newAngle * Math.PI) / 180;
-      const newAngleRad = angle1 + angleRad;
       
-      const currentWallLength = Math.sqrt(
-        Math.pow(nextPoint.x - currentPoint.x, 2) + 
-        Math.pow(nextPoint.y - currentPoint.y, 2)
-      );
-
-      newPoints[(index + 1) % room.points.length] = {
-        x: currentPoint.x + currentWallLength * Math.cos(newAngleRad),
-        y: currentPoint.y + currentWallLength * Math.sin(newAngleRad)
+      // Update doors - maintain absolute distances from wall start
+      const updatedDoors = room.doors.map(door => {
+        const wallIndex = door.wallIndex;
+        
+        // Skip doors that aren't on walls that exist
+        if (wallIndex >= oldPoints.length || wallIndex >= newPoints.length) {
+          return door;
+        }
+        
+        const oldStartVertex = oldPoints[wallIndex];
+        const oldEndVertex = oldPoints[(wallIndex + 1) % oldPoints.length];
+        
+        // Get new wall vertices
+        const newStartVertex = newPoints[wallIndex];
+        const newEndVertex = newPoints[(wallIndex + 1) % newPoints.length];
+        
+        // Calculate new wall vector
+        const newWallDx = newEndVertex.x - newStartVertex.x;
+        const newWallDy = newEndVertex.y - newStartVertex.y;
+        const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+        
+        // Calculate normalized direction vector for the new wall
+        const newDirX = newWallDx / newWallLength;
+        const newDirY = newWallDy / newWallLength;
+        
+        // Keep door position (distance from wall start) constant
+        const position = door.position; // This is already the absolute distance
+        
+        // Calculate new start point - absolute distance from wall start
+        const newStartPoint = {
+          x: newStartVertex.x + newDirX * position,
+          y: newStartVertex.y + newDirY * position
+        };
+        
+        // Calculate new end point - keeping the absolute width
+        const newEndPoint = {
+          x: newStartPoint.x + newDirX * door.width,
+          y: newStartPoint.y + newDirY * door.width
+        };
+        
+        // Check if the door now extends beyond the wall
+        if (position + door.width > newWallLength) {
+          // Adjust to fit within the wall
+          return {
+            ...door,
+            position: Math.max(0, newWallLength - door.width),
+            startPoint: {
+              x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+              y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+            },
+            endPoint: {
+              x: newEndVertex.x,
+              y: newEndVertex.y
+            }
+          };
+        }
+        
+        return {
+          ...door,
+          startPoint: newStartPoint,
+          endPoint: newEndPoint
+        };
+      });
+      
+      // Update windows - using the same approach
+      const updatedWindows = room.windows.map(window => {
+        const wallIndex = window.wallIndex;
+        
+        // Skip windows that aren't on walls that exist
+        if (wallIndex >= oldPoints.length || wallIndex >= newPoints.length) {
+          return window;
+        }
+        
+        const oldStartVertex = oldPoints[wallIndex];
+        const oldEndVertex = oldPoints[(wallIndex + 1) % oldPoints.length];
+        
+        // Get new wall vertices
+        const newStartVertex = newPoints[wallIndex];
+        const newEndVertex = newPoints[(wallIndex + 1) % newPoints.length];
+        
+        // Calculate new wall vector
+        const newWallDx = newEndVertex.x - newStartVertex.x;
+        const newWallDy = newEndVertex.y - newStartVertex.y;
+        const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+        
+        // Get the normalized direction vector of the new wall
+        const newDirX = newWallDx / newWallLength;
+        const newDirY = newWallDy / newWallLength;
+        
+        // Keep window position (distance from wall start) constant
+        const position = window.position; // This is already the absolute distance
+        
+        // Calculate new start point - absolute distance from wall start
+        const newStartPoint = {
+          x: newStartVertex.x + newDirX * position,
+          y: newStartVertex.y + newDirY * position
+        };
+        
+        // Calculate new end point - keeping the absolute width
+        const newEndPoint = {
+          x: newStartPoint.x + newDirX * window.width,
+          y: newStartPoint.y + newDirY * window.width
+        };
+        
+        // Check if the window now extends beyond the wall
+        if (position + window.width > newWallLength) {
+          // Adjust to fit within the wall
+          return {
+            ...window,
+            position: Math.max(0, newWallLength - window.width),
+            startPoint: {
+              x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
+              y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
+            },
+            endPoint: {
+              x: newEndVertex.x,
+              y: newEndVertex.y
+            }
+          };
+        }
+        
+        return {
+          ...window,
+          startPoint: newStartPoint,
+          endPoint: newEndPoint
+        };
+      });
+      
+      return {
+        ...room,
+        doors: updatedDoors,
+        windows: updatedWindows
       };
-
-      return { ...room, points: newPoints };
     }));
   };
+
   const exportRoomData = () => {
     // Create the export data structure directly from the existing room data
     const exportData = rooms.map(room => {
@@ -861,18 +1487,19 @@ const RoomDesigner: React.FC = () => {
       const mousePos = getMousePosition(e);
       
       if (selectedWindowPoint) {
+        // Window point movement logic (unchanged)
         const room = rooms.find(r => r.id === selectedWindowPoint.roomId);
         if (!room) return;
-
+  
         const p1 = room.points[room.windows[selectedWindowPoint.windowIndex].wallIndex];
         const p2 = room.points[(room.windows[selectedWindowPoint.windowIndex].wallIndex + 1) % room.points.length];
         
         const closestPoint = findClosestPointOnLine(mousePos, p1, p2);
         if (!closestPoint) return;
-
+  
         setRooms(rooms.map(r => {
           if (r.id !== selectedWindowPoint.roomId) return r;
-
+  
           const newWindows = [...r.windows];
           const window = newWindows[selectedWindowPoint.windowIndex];
           
@@ -893,21 +1520,23 @@ const RoomDesigner: React.FC = () => {
               Math.pow(closestPoint.y - window.startPoint.y, 2)
             );
           }
-
+  
           return { ...r, windows: newWindows };
-        })); } else if (selectedDoorPoint) {
+        }));
+      } else if (selectedDoorPoint) {
+        // Door point movement logic (unchanged)
         const room = rooms.find(r => r.id === selectedDoorPoint.roomId);
         if (!room) return;
-
+  
         const p1 = room.points[room.doors[selectedDoorPoint.doorIndex].wallIndex];
         const p2 = room.points[(room.doors[selectedDoorPoint.doorIndex].wallIndex + 1) % room.points.length];
         
         const closestPoint = findClosestPointOnLine(mousePos, p1, p2);
         if (!closestPoint) return;
-
+  
         setRooms(rooms.map(r => {
           if (r.id !== selectedDoorPoint.roomId) return r;
-
+  
           const newDoors = [...r.doors];
           const door = newDoors[selectedDoorPoint.doorIndex];
           
@@ -925,23 +1554,191 @@ const RoomDesigner: React.FC = () => {
             door.endPoint = closestPoint;
             door.width = Math.sqrt(
               Math.pow(closestPoint.x - door.startPoint.x, 2) + 
-              Math.pow(closestPoint.y - door.startPoint.y, 2)
+              Math.pow(door.endPoint.y - closestPoint.y, 2)
             );
           }
-
+  
           return { ...r, doors: newDoors };
         }));
       } else if (selectedPoint) {
-        setRooms(rooms.map(r => {
-          if (r.id !== selectedPoint.roomId) return r;
-
+        // Room vertex movement logic - FIXED VERSION
+        const roomId = selectedPoint.roomId;
+        const pointIndex = selectedPoint.index;
+        
+        // Get the room to be updated
+        const room = rooms.find(r => r.id === roomId);
+        if (!room) return;
+        
+        // Store the old points for door/window updates
+        const oldPoints = [...room.points];
+        
+        // Create a copy of all rooms
+        const newRooms = rooms.map(r => {
+          if (r.id !== roomId) return r;
+          
+          // Create new points array with updated position
           const newPoints = [...r.points];
-          newPoints[selectedPoint.index] = mousePos;
-
-          return { ...r, points: newPoints };
-        }));
+          newPoints[pointIndex] = mousePos;
+          
+          return { 
+            ...r, 
+            points: newPoints,
+          };
+        });
+        
+        // Get the updated room with new points
+        const updatedRoom = newRooms.find(r => r.id === roomId);
+        if (!updatedRoom) return;
+        
+        // For completed rooms with doors/windows, update them
+        if (updatedRoom.isComplete && (updatedRoom.doors.length > 0 || updatedRoom.windows.length > 0)) {
+          // Update doors within this room
+          const updatedDoors = updatedRoom.doors.map(door => {
+            const wallIndex = door.wallIndex;
+            
+            // Skip doors on non-existent walls
+            if (wallIndex >= oldPoints.length || wallIndex >= updatedRoom.points.length) {
+              return door;
+            }
+            
+            // Get new wall vertices
+            const newStartVertex = updatedRoom.points[wallIndex];
+            const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+            
+            // Calculate new wall vector
+            const newWallDx = newEndVertex.x - newStartVertex.x;
+            const newWallDy = newEndVertex.y - newStartVertex.y;
+            const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+            
+            // Skip if wall has zero length
+            if (newWallLength === 0) return door;
+            
+            // Calculate normalized direction vector for the new wall
+            const newDirX = newWallDx / newWallLength;
+            const newDirY = newWallDy / newWallLength;
+            
+            // Keep door position (distance from wall start) constant
+            const position = door.position;
+            
+            // Calculate new start point - absolute distance from wall start
+            const newStartPoint = {
+              x: newStartVertex.x + newDirX * position,
+              y: newStartVertex.y + newDirY * position
+            };
+            
+            // Calculate new end point - keeping the absolute width
+            const newEndPoint = {
+              x: newStartPoint.x + newDirX * door.width,
+              y: newStartPoint.y + newDirY * door.width
+            };
+            
+            // Check if the door now extends beyond the wall
+            if (position + door.width > newWallLength) {
+              // Adjust to fit within the wall
+              return {
+                ...door,
+                position: Math.max(0, newWallLength - door.width),
+                startPoint: {
+                  x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+                  y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+                },
+                endPoint: {
+                  x: newEndVertex.x,
+                  y: newEndVertex.y
+                }
+              };
+            }
+            
+            return {
+              ...door,
+              startPoint: newStartPoint,
+              endPoint: newEndPoint
+            };
+          });
+          
+          // Update windows within this room
+          const updatedWindows = updatedRoom.windows.map(window => {
+            const wallIndex = window.wallIndex;
+            
+            // Skip windows on non-existent walls
+            if (wallIndex >= oldPoints.length || wallIndex >= updatedRoom.points.length) {
+              return window;
+            }
+            
+            // Get new wall vertices
+            const newStartVertex = updatedRoom.points[wallIndex];
+            const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
+            
+            // Calculate new wall vector
+            const newWallDx = newEndVertex.x - newStartVertex.x;
+            const newWallDy = newEndVertex.y - newStartVertex.y;
+            const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+            
+            // Skip if wall has zero length
+            if (newWallLength === 0) return window;
+            
+            // Calculate normalized direction vector for the new wall
+            const newDirX = newWallDx / newWallLength;
+            const newDirY = newWallDy / newWallLength;
+            
+            // Keep window position (distance from wall start) constant
+            const position = window.position;
+            
+            // Calculate new start point - absolute distance from wall start
+            const newStartPoint = {
+              x: newStartVertex.x + newDirX * position,
+              y: newStartVertex.y + newDirY * position
+            };
+            
+            // Calculate new end point - keeping the absolute width
+            const newEndPoint = {
+              x: newStartPoint.x + newDirX * window.width,
+              y: newStartPoint.y + newDirY * window.width
+            };
+            
+            // Check if the window now extends beyond the wall
+            if (position + window.width > newWallLength) {
+              // Adjust to fit within the wall
+              return {
+                ...window,
+                position: Math.max(0, newWallLength - window.width),
+                startPoint: {
+                  x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
+                  y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
+                },
+                endPoint: {
+                  x: newEndVertex.x,
+                  y: newEndVertex.y
+                }
+              };
+            }
+            
+            return {
+              ...window,
+              startPoint: newStartPoint,
+              endPoint: newEndPoint
+            };
+          });
+          
+          // Update the room with new doors and windows
+          const finalRooms = newRooms.map(r => {
+            if (r.id !== roomId) return r;
+            return {
+              ...r,
+              doors: updatedDoors,
+              windows: updatedWindows
+            };
+          });
+          
+          // Set the final state with all updates in one go
+          setRooms(finalRooms);
+        } else {
+          // If no doors/windows or room not complete, just update the points
+          setRooms(newRooms);
+        }
       }
     } else if (isPanning && lastPanPosition) {
+      // Panning logic (unchanged)
       const currentPos = getScreenMousePosition(e);
       const dx = currentPos.x - lastPanPosition.x;
       const dy = currentPos.y - lastPanPosition.y;
