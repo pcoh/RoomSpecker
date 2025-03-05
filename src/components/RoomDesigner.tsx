@@ -884,7 +884,8 @@ const RoomDesigner: React.FC = () => {
       if (isComplete) {
         ctx.closePath();
       }
-      ctx.strokeStyle = '#2563eb';
+      // ctx.strokeStyle = '#2563eb';
+      ctx.strokeStyle = '#888888';
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -1026,7 +1027,7 @@ const RoomDesigner: React.FC = () => {
       
       ctx.beginPath();
       ctx.arc(screenPoint.x, screenPoint.y, POINT_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = selectedPoint === index ? '#dc2626' : '#2563eb';
+      ctx.fillStyle = selectedPoint === index ? '#dc2626' : '#888888';
       ctx.fill();
 
       ctx.font = '12px Arial';
@@ -1193,6 +1194,7 @@ const RoomDesigner: React.FC = () => {
     }
   };
 
+  // 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging) {
       const mousePos = getMousePosition(e);
@@ -1212,19 +1214,28 @@ const RoomDesigner: React.FC = () => {
           mousePos
         );
       } else if (selectedPoint !== null && selectedPoint !== 0) {
+        // Save old points before updating
+        const oldPoints = [...points];
+        
         // Move room point
         const newPoints = [...points];
         newPoints[selectedPoint] = mousePos;
         setPoints(newPoints);
+        
+        // Update doors and windows based on the new room shape
+        if (isComplete && (doors.length > 0 || windows.length > 0)) {
+          updateDoorsAndWindows(newPoints, oldPoints);
+        }
       }
     } else if (isPanning && lastPanPosition) {
+      // Panning code remains unchanged
       const currentPos = getScreenMousePosition(e);
       const dx = currentPos.x - lastPanPosition.x;
       const dy = currentPos.y - lastPanPosition.y;
       
       setPan(prevPan => ({
         x: prevPan.x + dx,
-        y: prevPan.y - dy // Invert Y direction for panning to match coordinate system
+        y: prevPan.y - dy 
       }));
       
       setLastPanPosition(currentPos);
@@ -1278,22 +1289,67 @@ const RoomDesigner: React.FC = () => {
     setPoints([...points, mousePos]);
   };
 
-  const updatePoint = (index: number, newX: number, newY: number) => {
-    const newPoints = [...points];
-    if (index === 0) {
-      const dx = newX - points[0].x;
-      const dy = newY - points[0].y;
-      newPoints.forEach((point, i) => {
-        point.x += dx;
-        point.y += dy;
-      });
-    } else {
-      newPoints[index] = { x: newX, y: newY };
-    }
-    setPoints(newPoints);
-  };
+  // const updatePoint = (index: number, newX: number, newY: number) => {
+  //   const newPoints = [...points];
+  //   if (index === 0) {
+  //     const dx = newX - points[0].x;
+  //     const dy = newY - points[0].y;
+  //     newPoints.forEach((point, i) => {
+  //       point.x += dx;
+  //       point.y += dy;
+  //     });
+  //   } else {
+  //     newPoints[index] = { x: newX, y: newY };
+  //   }
+  //   setPoints(newPoints);
+  // };
 
+  // 3. Modify updatePoint function - handles manual coordinate editing
+const updatePoint = (index: number, newX: number, newY: number) => {
+  // Save old points before updating
+  const oldPoints = [...points];
+  
+  const newPoints = [...points];
+  if (index === 0) {
+    const dx = newX - points[0].x;
+    const dy = newY - points[0].y;
+    newPoints.forEach((point, i) => {
+      point.x += dx;
+      point.y += dy;
+    });
+  } else {
+    newPoints[index] = { x: newX, y: newY };
+  }
+  
+  setPoints(newPoints);
+  
+  // Update doors and windows based on the new room shape
+  if (isComplete && (doors.length > 0 || windows.length > 0)) {
+    updateDoorsAndWindows(newPoints, oldPoints);
+  }
+};
+
+  // const updateWallLength = (index: number, newLength: number) => {
+  //   const newPoints = [...points];
+  //   const currentPoint = points[index];
+  //   const nextPoint = points[(index + 1) % points.length];
+    
+  //   const angle = Math.atan2(
+  //     nextPoint.y - currentPoint.y,
+  //     nextPoint.x - currentPoint.x
+  //   );
+    
+  //   newPoints[(index + 1) % points.length] = {
+  //     x: currentPoint.x + Math.cos(angle) * newLength,
+  //     y: currentPoint.y + Math.sin(angle) * newLength
+  //   };
+    
+  //   setPoints(newPoints);
+  // };
   const updateWallLength = (index: number, newLength: number) => {
+    // Save old points before updating
+    const oldPoints = [...points];
+    
     const newPoints = [...points];
     const currentPoint = points[index];
     const nextPoint = points[(index + 1) % points.length];
@@ -1309,6 +1365,11 @@ const RoomDesigner: React.FC = () => {
     };
     
     setPoints(newPoints);
+    
+    // Update doors and windows based on the new room shape
+    if (isComplete && (doors.length > 0 || windows.length > 0)) {
+      updateDoorsAndWindows(newPoints, oldPoints);
+    }
   };
 
   const updateAngle = (index: number, newAngle: number) => {
@@ -1404,6 +1465,147 @@ const RoomDesigner: React.FC = () => {
 
   const wallData = calculateWallData();
 
+  const updateDoorsAndWindows = (newPoints: Point[], oldPoints: Point[]) => {
+    // Update doors
+    const updatedDoors = doors.map(door => {
+      const wallIndex = door.wallIndex;
+      const startVertex = oldPoints[wallIndex];
+      const endVertex = oldPoints[(wallIndex + 1) % oldPoints.length];
+      
+      // Calculate the old wall vector
+      const oldWallDx = endVertex.x - startVertex.x;
+      const oldWallDy = endVertex.y - startVertex.y;
+      const oldWallLength = Math.sqrt(oldWallDx * oldWallDx + oldWallDy * oldWallDy);
+      
+      // Get the normalized direction vector of the old wall
+      const oldDirX = oldWallDx / oldWallLength;
+      const oldDirY = oldWallDy / oldWallLength;
+      
+      // Get new wall vertices
+      const newStartVertex = newPoints[wallIndex];
+      const newEndVertex = newPoints[(wallIndex + 1) % newPoints.length];
+      
+      // Calculate new wall vector
+      const newWallDx = newEndVertex.x - newStartVertex.x;
+      const newWallDy = newEndVertex.y - newStartVertex.y;
+      const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+      
+      // Get the normalized direction vector of the new wall
+      const newDirX = newWallDx / newWallLength;
+      const newDirY = newWallDy / newWallLength;
+      
+      // Keep door position (distance from wall start) constant
+      const position = door.position; // This is already the absolute distance
+      
+      // Calculate new start point - absolute distance from wall start
+      const newStartPoint = {
+        x: newStartVertex.x + newDirX * position,
+        y: newStartVertex.y + newDirY * position
+      };
+      
+      // Calculate new end point - keeping the absolute width
+      const newEndPoint = {
+        x: newStartPoint.x + newDirX * door.width,
+        y: newStartPoint.y + newDirY * door.width
+      };
+      
+      // Check if the door now extends beyond the wall
+      if (position + door.width > newWallLength) {
+        // Adjust to fit within the wall
+        return {
+          ...door,
+          position: Math.max(0, newWallLength - door.width),
+          startPoint: {
+            x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+            y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+          },
+          endPoint: {
+            x: newEndVertex.x,
+            y: newEndVertex.y
+          }
+        };
+      }
+      
+      return {
+        ...door,
+        startPoint: newStartPoint,
+        endPoint: newEndPoint
+      };
+    });
+    
+    // Update windows using the same approach
+    const updatedWindows = windows.map(window => {
+      const wallIndex = window.wallIndex;
+      const startVertex = oldPoints[wallIndex];
+      const endVertex = oldPoints[(wallIndex + 1) % oldPoints.length];
+      
+      // Calculate the old wall vector
+      const oldWallDx = endVertex.x - startVertex.x;
+      const oldWallDy = endVertex.y - startVertex.y;
+      const oldWallLength = Math.sqrt(oldWallDx * oldWallDx + oldWallDy * oldWallDy);
+      
+      // Get the normalized direction vector of the old wall
+      const oldDirX = oldWallDx / oldWallLength;
+      const oldDirY = oldWallDy / oldWallLength;
+      
+      // Get new wall vertices
+      const newStartVertex = newPoints[wallIndex];
+      const newEndVertex = newPoints[(wallIndex + 1) % newPoints.length];
+      
+      // Calculate new wall vector
+      const newWallDx = newEndVertex.x - newStartVertex.x;
+      const newWallDy = newEndVertex.y - newStartVertex.y;
+      const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+      
+      // Get the normalized direction vector of the new wall
+      const newDirX = newWallDx / newWallLength;
+      const newDirY = newWallDy / newWallLength;
+      
+      // Keep window position (distance from wall start) constant
+      const position = window.position; // This is already the absolute distance
+      
+      // Calculate new start point - absolute distance from wall start
+      const newStartPoint = {
+        x: newStartVertex.x + newDirX * position,
+        y: newStartVertex.y + newDirY * position
+      };
+      
+      // Calculate new end point - keeping the absolute width
+      const newEndPoint = {
+        x: newStartPoint.x + newDirX * window.width,
+        y: newStartPoint.y + newDirY * window.width
+      };
+      
+      // Check if the window now extends beyond the wall
+      if (position + window.width > newWallLength) {
+        // Adjust to fit within the wall
+        return {
+          ...window,
+          position: Math.max(0, newWallLength - window.width),
+          startPoint: {
+            x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
+            y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
+          },
+          endPoint: {
+            x: newEndVertex.x,
+            y: newEndVertex.y
+          }
+        };
+      }
+      
+      return {
+        ...window,
+        startPoint: newStartPoint,
+        endPoint: newEndPoint
+      };
+    });
+    
+    setDoors(updatedDoors);
+    setWindows(updatedWindows);
+  };
+
+
+
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-lg p-4">
@@ -1419,15 +1621,15 @@ const RoomDesigner: React.FC = () => {
               <RotateCcw size={16} />
               Reset Room
             </button>
-            <button
+            {/* <button
               onClick={saveRoom}
               disabled={isSaving}
               className="flex items-center gap-2 px-4 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save size={16} />
               {isSaving ? 'Saving...' : 'Save Room'}
-            </button>
-            <button
+            </button> */}
+            {/* <button
               onClick={processRoom}
               disabled={isProcessing}
               className="flex items-center gap-2 px-4 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1440,11 +1642,12 @@ const RoomDesigner: React.FC = () => {
               className="flex items-center gap-2 px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
               {showApiConfig ? 'Hide API Config' : 'Configure API'}
-            </button>
+            </button> */}
             <button
               onClick={startAddingDoor}
               disabled={addingDoor}
-              className="flex items-center gap-2 px-4 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              // className="flex items-center gap-2 px-4 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <DoorOpen size={16} />
               {addingDoor ? 'Adding Door...' : 'Add Door'}
@@ -1452,7 +1655,7 @@ const RoomDesigner: React.FC = () => {
             <button
               onClick={startAddingWindow}
               disabled={addingWindow}
-              className="flex items-center gap-2 px-4 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-2 px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Square size={16} />
               {addingWindow ? 'Adding Window...' : 'Add Window'}
