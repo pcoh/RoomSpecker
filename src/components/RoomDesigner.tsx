@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Copy, RotateCcw, Save, Send, DoorOpen, Square } from 'lucide-react';
+// import { Copy, RotateCcw, Save, Send, DoorOpen, Square } from 'lucide-react';
+import { Copy, RotateCcw, DoorOpen, Square } from 'lucide-react';
 import ContextMenu from './ContextMenu';
-import roomApi from '../services/api';
 
 interface Point {
   x: number;
@@ -79,10 +79,6 @@ const RoomDesigner: React.FC = () => {
   const [scale, setScale] = useState(0.08); // Adjusted to fit 10m x 8m
   const [editingAngles, setEditingAngles] = useState<{ [key: number]: string }>({});
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
-  const [isSaving, setIsSaving] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [externalApiUrl, setExternalApiUrl] = useState<string>('');
-  const [showApiConfig, setShowApiConfig] = useState(false);
   const [addingDoor, setAddingDoor] = useState(false);
   const [doorStartPoint, setDoorStartPoint] = useState<{wallIndex: number, point: Point} | null>(null);
   const [addingWindow, setAddingWindow] = useState(false);
@@ -91,7 +87,6 @@ const RoomDesigner: React.FC = () => {
   const [windowSillHeight, setWindowSillHeight] = useState<number>(DEFAULT_WINDOW_SILL_HEIGHT);
 
   // Convert screen coordinates to world coordinates
-  // Note: Y is now inverted to make Y-axis point up
   const screenToWorld = (screenX: number, screenY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -103,7 +98,6 @@ const RoomDesigner: React.FC = () => {
   };
 
   // Convert world coordinates to screen coordinates
-  // Note: Y is now inverted to make Y-axis point up
   const worldToScreen = (worldX: number, worldY: number): Point => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -173,86 +167,6 @@ const RoomDesigner: React.FC = () => {
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawRoom();
-  };
-
-  // Safe logging function to prevent DataCloneError
-  const safeLog = (message: string, data: any) => {
-    try {
-      // Create a safe copy with only serializable data
-      const safeData = JSON.parse(JSON.stringify(data));
-      console.log(message, safeData);
-    } catch (error) {
-      console.log(message, "Data contained non-serializable values");
-    }
-  };
-
-  const saveRoom = async () => {
-    if (!isComplete || points.length < 3) {
-      alert('Please complete the room design first');
-      return;
-    }
-
-    if (isSaving) return;
-
-    try {
-      setIsSaving(true);
-      
-      // Create a simple data structure with only primitive values
-      const roomData = {
-        name: `Room ${new Date().toLocaleString()}`,
-        points: points.map(point => ({
-          x: Math.round(point.x),
-          y: Math.round(point.y)
-        }))
-      };
-
-      const result = await roomApi.saveRoom(roomData);
-      alert('Room saved successfully!');
-      safeLog('Saved room:', result);
-    } catch (error) {
-      console.error('Error saving room:', error instanceof Error ? error.message : String(error));
-      alert('Error saving room');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const processRoom = async () => {
-    if (!isComplete || points.length < 3) {
-      alert('Please complete the room design first');
-      return;
-    }
-
-    if (isProcessing) return;
-
-    try {
-      setIsProcessing(true);
-      
-      // Create a simple data structure with only primitive values
-      const roomData = {
-        points: points.map(point => ({
-          x: Math.round(point.x),
-          y: Math.round(point.y)
-        }))
-      };
-
-      // If external API URL is set, send to that endpoint
-      if (externalApiUrl) {
-        const response = await roomApi.sendToExternalApi(roomData, externalApiUrl);
-        safeLog('Sent to external API:', response);
-        alert('Room data sent to external API successfully!');
-      } else {
-        // Otherwise use the default endpoint
-        const response = await roomApi.processRoom(roomData);
-        safeLog('Processed room:', response);
-        alert('Room processed successfully! Check the console for details.');
-      }
-    } catch (error) {
-      console.error('Error processing room:', error instanceof Error ? error.message : String(error));
-      alert('Error processing room');
-    } finally {
-      setIsProcessing(false);
-    }
   };
 
   const calculateWallData = (): WallData[] => {
@@ -1289,23 +1203,7 @@ const RoomDesigner: React.FC = () => {
     setPoints([...points, mousePos]);
   };
 
-  // const updatePoint = (index: number, newX: number, newY: number) => {
-  //   const newPoints = [...points];
-  //   if (index === 0) {
-  //     const dx = newX - points[0].x;
-  //     const dy = newY - points[0].y;
-  //     newPoints.forEach((point, i) => {
-  //       point.x += dx;
-  //       point.y += dy;
-  //     });
-  //   } else {
-  //     newPoints[index] = { x: newX, y: newY };
-  //   }
-  //   setPoints(newPoints);
-  // };
-
-  // 3. Modify updatePoint function - handles manual coordinate editing
-const updatePoint = (index: number, newX: number, newY: number) => {
+  const updatePoint = (index: number, newX: number, newY: number) => {
   // Save old points before updating
   const oldPoints = [...points];
   
@@ -1329,24 +1227,7 @@ const updatePoint = (index: number, newX: number, newY: number) => {
   }
 };
 
-  // const updateWallLength = (index: number, newLength: number) => {
-  //   const newPoints = [...points];
-  //   const currentPoint = points[index];
-  //   const nextPoint = points[(index + 1) % points.length];
-    
-  //   const angle = Math.atan2(
-  //     nextPoint.y - currentPoint.y,
-  //     nextPoint.x - currentPoint.x
-  //   );
-    
-  //   newPoints[(index + 1) % points.length] = {
-  //     x: currentPoint.x + Math.cos(angle) * newLength,
-  //     y: currentPoint.y + Math.sin(angle) * newLength
-  //   };
-    
-  //   setPoints(newPoints);
-  // };
-  const updateWallLength = (index: number, newLength: number) => {
+const updateWallLength = (index: number, newLength: number) => {
     // Save old points before updating
     const oldPoints = [...points];
     
@@ -1445,14 +1326,6 @@ const updatePoint = (index: number, newX: number, newY: number) => {
     const newEditingAngles = { ...editingAngles };
     delete newEditingAngles[index];
     setEditingAngles(newEditingAngles);
-  };
-
-  const toggleApiConfig = () => {
-    setShowApiConfig(!showApiConfig);
-  };
-
-  const handleApiUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setExternalApiUrl(e.target.value);
   };
 
   const handleWindowHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1604,8 +1477,6 @@ const updatePoint = (index: number, newX: number, newY: number) => {
     setWindows(updatedWindows);
   };
 
-
-
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-lg p-4">
@@ -1621,28 +1492,6 @@ const updatePoint = (index: number, newX: number, newY: number) => {
               <RotateCcw size={16} />
               Reset Room
             </button>
-            {/* <button
-              onClick={saveRoom}
-              disabled={isSaving}
-              className="flex items-center gap-2 px-4 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Save size={16} />
-              {isSaving ? 'Saving...' : 'Save Room'}
-            </button> */}
-            {/* <button
-              onClick={processRoom}
-              disabled={isProcessing}
-              className="flex items-center gap-2 px-4 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Send size={16} />
-              {isProcessing ? 'Processing...' : 'Send to API'}
-            </button>
-            <button
-              onClick={toggleApiConfig}
-              className="flex items-center gap-2 px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              {showApiConfig ? 'Hide API Config' : 'Configure API'}
-            </button> */}
             <button
               onClick={startAddingDoor}
               disabled={addingDoor}
@@ -1669,30 +1518,6 @@ const updatePoint = (index: number, newX: number, newY: number) => {
             </button>
           </div>
         </div>
-
-        {showApiConfig && (
-          <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-            <h3 className="text-lg font-medium mb-2">API Configuration</h3>
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <label htmlFor="apiUrl" className="block text-sm font-medium text-gray-700 mb-1">
-                  External API URL
-                </label>
-                <input
-                  type="text"
-                  id="apiUrl"
-                  value={externalApiUrl}
-                  onChange={handleApiUrlChange}
-                  placeholder="https://your-api-endpoint.com/process"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="mt-1 text-sm text-gray-500">
-                  Leave empty to use the default local API endpoint
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {addingDoor && (
           <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-amber-50">
