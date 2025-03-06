@@ -124,6 +124,7 @@ const RoomDesigner: React.FC = () => {
       const point = lastDraggedPointRef.current;
       lastDraggedPointRef.current = null;
       
+      // Only call this after dragging has completely finished
       setTimeout(() => {
         updateAttachedPointsAfterDrag(point);
       }, 200);
@@ -669,6 +670,50 @@ const RoomDesigner: React.FC = () => {
       
       // Create new points array with updated position
       const newPoints = [...r.points];
+      
+      // If this point is attached to a wall, handle it specially
+      if (index > 0 && newPoints[index].attachedTo) {
+        // Get the wall this point is attached to
+        const attachedTo = newPoints[index].attachedTo;
+        const parentRoom = rooms.find(pr => pr.id === attachedTo.roomId);
+        
+        if (parentRoom && parentRoom.points.length > attachedTo.wallIndex) {
+          const wallStart = parentRoom.points[attachedTo.wallIndex];
+          const wallEnd = parentRoom.points[(attachedTo.wallIndex + 1) % parentRoom.points.length];
+          
+          // Project the new position onto the wall
+          const wallVectorX = wallEnd.x - wallStart.x;
+          const wallVectorY = wallEnd.y - wallStart.y;
+          const wallLength = Math.sqrt(wallVectorX * wallVectorX + wallVectorY * wallVectorY);
+          
+          if (wallLength === 0) return r;
+          
+          // Calculate projection
+          const dotProduct = ((newX - wallStart.x) * wallVectorX + (newY - wallStart.y) * wallVectorY);
+          
+          // Clamp the projection to be within the wall segment
+          const t = Math.max(0, Math.min(1, dotProduct / (wallLength * wallLength)));
+          
+          // Get the projected position
+          const projectedX = wallStart.x + t * wallVectorX;
+          const projectedY = wallStart.y + t * wallVectorY;
+          
+          // Update ONLY this point's position and parametric value
+          newPoints[index] = {
+            ...newPoints[index],
+            x: projectedX,
+            y: projectedY,
+            attachedTo: {
+              roomId: attachedTo.roomId,
+              wallIndex: attachedTo.wallIndex,
+              t: t  // Update the t parameter based on the projection
+            }
+          };
+        }
+        return { ...r, points: newPoints };
+      }
+      
+      // Handle regular point movement
       if (index === 0) {
         const dx = newX - r.points[0].x;
         const dy = newY - r.points[0].y;
@@ -677,13 +722,7 @@ const RoomDesigner: React.FC = () => {
           point.y += dy;
         });
       } else {
-        // If this point is attached to a wall, don't allow direct position change
-        if (newPoints[index].attachedTo) {
-          // We could project the new point onto the wall, but for simplicity,
-          // we'll just disallow direct editing of attached points
-          // You could show a message to the user here if needed
-          return r;
-        }
+        // Only update this specific point
         newPoints[index] = { 
           ...newPoints[index], // Preserve attachedTo and other properties
           x: newX, 
@@ -1568,15 +1607,105 @@ const RoomDesigner: React.FC = () => {
       const mousePos = getMousePosition(e);
       
       // Store the selected point for use when drag ends
-      // if (selectedPoint) {
-      //   window.lastDraggedPoint = selectedPoint;
-      // }
       if (selectedPoint) {
         lastDraggedPointRef.current = { ...selectedPoint };
-      }
-      
-      if (selectedWindowPoint) {
-        // Window point movement logic (unchanged)
+        
+        // Get the room with the selected point
+        const room = rooms.find(r => r.id === selectedPoint.roomId);
+        if (!room) return;
+        
+        const pointIndex = selectedPoint.index;
+        const point = room.points[pointIndex];
+        
+        // Check if this point is attached to a wall (any point, not just index > 0)
+        if (point.attachedTo) {
+          // Find the parent room and wall this point is attached to
+          const parentRoom = rooms.find(r => r.id === point.attachedTo.roomId);
+          if (!parentRoom) return;
+          
+          const wallIndex = point.attachedTo.wallIndex;
+          const wallStart = parentRoom.points[wallIndex];
+          const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
+          
+          // Project the mouse position onto the wall
+          const wallVectorX = wallEnd.x - wallStart.x;
+          const wallVectorY = wallEnd.y - wallStart.y;
+          const wallLength = Math.sqrt(wallVectorX * wallVectorX + wallVectorY * wallVectorY);
+          
+          if (wallLength === 0) return;
+          
+          // Calculate dot product to find the projection
+          const dotProduct = ((mousePos.x - wallStart.x) * wallVectorX + (mousePos.y - wallStart.y) * wallVectorY);
+          
+          // Clamp the projection to be within the wall segment
+          const t = Math.max(0, Math.min(1, dotProduct / (wallLength * wallLength)));
+          
+          // Create the updated point position on the wall
+          const updatedPoint = {
+            x: wallStart.x + t * wallVectorX,
+            y: wallStart.y + t * wallVectorY
+          };
+          
+          // Update the rooms state with the new projected position - ONLY modify the selected point
+          setRooms(prevRooms => {
+            return prevRooms.map(r => {
+              if (r.id !== selectedPoint.roomId) return r;
+              
+              const newPoints = [...r.points];
+              newPoints[pointIndex] = {
+                ...newPoints[pointIndex],
+                x: updatedPoint.x,
+                y: updatedPoint.y,
+                attachedTo: {
+                  roomId: point.attachedTo.roomId,
+                  wallIndex: point.attachedTo.wallIndex,
+                  t: t  // Update the t parameter to allow movement along the wall
+                }
+              };
+              
+              return { ...r, points: newPoints };
+            });
+          });
+          
+          return; // Return early to prevent other point handling logic from running
+        }
+        
+        // Handle origin point movement (moves all points)
+        if (pointIndex === 0) {
+          // Check if the first point is attached to a wall
+          if (point.attachedTo) {
+            // Already handled above, just return
+            return;
+          }
+          
+          // If not attached, then move all points as before
+          setRooms(rooms.map(r => {
+            if (r.id !== selectedPoint.roomId) return r;
+            
+            const dx = mousePos.x - r.points[0].x;
+            const dy = mousePos.y - r.points[0].y;
+            
+            const newPoints = r.points.map(p => ({
+              ...p,
+              x: p.x + dx,
+              y: p.y + dy
+            }));
+            
+            return { ...r, points: newPoints };
+          }));
+        } else {
+          // Regular point movement (non-attached, non-origin) - ONLY move this specific point
+          setRooms(rooms.map(r => {
+            if (r.id !== selectedPoint.roomId) return r;
+            
+            const newPoints = [...r.points];
+            newPoints[pointIndex] = { ...newPoints[pointIndex], x: mousePos.x, y: mousePos.y };
+            
+            return { ...r, points: newPoints };
+          }));
+        }
+      } else if (selectedWindowPoint) {
+        // Window point movement logic
         const room = rooms.find(r => r.id === selectedWindowPoint.roomId);
         if (!room) return;
     
@@ -1613,7 +1742,7 @@ const RoomDesigner: React.FC = () => {
           return { ...r, windows: newWindows };
         }));
       } else if (selectedDoorPoint) {
-        // Door point movement logic (unchanged)
+        // Door point movement logic
         const room = rooms.find(r => r.id === selectedDoorPoint.roomId);
         if (!room) return;
     
@@ -1643,191 +1772,15 @@ const RoomDesigner: React.FC = () => {
             door.endPoint = closestPoint;
             door.width = Math.sqrt(
               Math.pow(closestPoint.x - door.startPoint.x, 2) + 
-              Math.pow(door.endPoint.y - closestPoint.y, 2)
+              Math.pow(door.startPoint.y - closestPoint.y, 2)
             );
           }
     
           return { ...r, doors: newDoors };
         }));
-      } else if (selectedPoint) {
-        // Room vertex movement logic - FIXED VERSION
-        const roomId = selectedPoint.roomId;
-        const pointIndex = selectedPoint.index;
-        
-        // Get the room to be updated
-        const room = rooms.find(r => r.id === roomId);
-        if (!room) return;
-        
-        // Store the old points for door/window updates
-        const oldPoints = [...room.points];
-        
-        // Create a copy of all rooms
-        const newRooms = rooms.map(r => {
-          if (r.id !== roomId) return r;
-          
-          // Create new points array with updated position
-          const newPoints = [...r.points];
-          newPoints[pointIndex] = mousePos;
-          
-          return { 
-            ...r, 
-            points: newPoints,
-          };
-        });
-        
-        // Get the updated room with new points
-        const updatedRoom = newRooms.find(r => r.id === roomId);
-        if (!updatedRoom) return;
-        
-        // For completed rooms with doors/windows, update them
-        if (updatedRoom.isComplete && (updatedRoom.doors.length > 0 || updatedRoom.windows.length > 0)) {
-          // Update doors within this room
-          const updatedDoors = updatedRoom.doors.map(door => {
-            const wallIndex = door.wallIndex;
-            
-            // Skip doors on non-existent walls
-            if (wallIndex >= oldPoints.length || wallIndex >= updatedRoom.points.length) {
-              return door;
-            }
-            
-            // Get new wall vertices
-            const newStartVertex = updatedRoom.points[wallIndex];
-            const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
-            
-            // Calculate new wall vector
-            const newWallDx = newEndVertex.x - newStartVertex.x;
-            const newWallDy = newEndVertex.y - newStartVertex.y;
-            const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
-            
-            // Skip if wall has zero length
-            if (newWallLength === 0) return door;
-            
-            // Calculate normalized direction vector for the new wall
-            const newDirX = newWallDx / newWallLength;
-            const newDirY = newWallDy / newWallLength;
-            
-            // Keep door position (distance from wall start) constant
-            const position = door.position;
-            
-            // Calculate new start point - absolute distance from wall start
-            const newStartPoint = {
-              x: newStartVertex.x + newDirX * position,
-              y: newStartVertex.y + newDirY * position
-            };
-            
-            // Calculate new end point - keeping the absolute width
-            const newEndPoint = {
-              x: newStartPoint.x + newDirX * door.width,
-              y: newStartPoint.y + newDirY * door.width
-            };
-            
-            // Check if the door now extends beyond the wall
-            if (position + door.width > newWallLength) {
-              // Adjust to fit within the wall
-              return {
-                ...door,
-                position: Math.max(0, newWallLength - door.width),
-                startPoint: {
-                  x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
-                  y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
-                },
-                endPoint: {
-                  x: newEndVertex.x,
-                  y: newEndVertex.y
-                }
-              };
-            }
-            
-            return {
-              ...door,
-              startPoint: newStartPoint,
-              endPoint: newEndPoint
-            };
-          });
-          
-          // Update windows within this room
-          const updatedWindows = updatedRoom.windows.map(window => {
-            const wallIndex = window.wallIndex;
-            
-            // Skip windows on non-existent walls
-            if (wallIndex >= oldPoints.length || wallIndex >= updatedRoom.points.length) {
-              return window;
-            }
-            
-            // Get new wall vertices
-            const newStartVertex = updatedRoom.points[wallIndex];
-            const newEndVertex = updatedRoom.points[(wallIndex + 1) % updatedRoom.points.length];
-            
-            // Calculate new wall vector
-            const newWallDx = newEndVertex.x - newStartVertex.x;
-            const newWallDy = newEndVertex.y - newStartVertex.y;
-            const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
-            
-            // Skip if wall has zero length
-            if (newWallLength === 0) return window;
-            
-            // Calculate normalized direction vector for the new wall
-            const newDirX = newWallDx / newWallLength;
-            const newDirY = newWallDy / newWallLength;
-            
-            // Keep window position (distance from wall start) constant
-            const position = window.position;
-            
-            // Calculate new start point - absolute distance from wall start
-            const newStartPoint = {
-              x: newStartVertex.x + newDirX * position,
-              y: newStartVertex.y + newDirY * position
-            };
-            
-            // Calculate new end point - keeping the absolute width
-            const newEndPoint = {
-              x: newStartPoint.x + newDirX * window.width,
-              y: newStartPoint.y + newDirY * window.width
-            };
-            
-            // Check if the window now extends beyond the wall
-            if (position + window.width > newWallLength) {
-              // Adjust to fit within the wall
-              return {
-                ...window,
-                position: Math.max(0, newWallLength - window.width),
-                startPoint: {
-                  x: newStartVertex.x + newDirX * Math.max(0, newWallLength - window.width),
-                  y: newStartVertex.y + newDirY * Math.max(0, newWallLength - window.width)
-                },
-                endPoint: {
-                  x: newEndVertex.x,
-                  y: newEndVertex.y
-                }
-              };
-            }
-            
-            return {
-              ...window,
-              startPoint: newStartPoint,
-              endPoint: newEndPoint
-            };
-          });
-          
-          // Update the room with new doors and windows
-          const finalRooms = newRooms.map(r => {
-            if (r.id !== roomId) return r;
-            return {
-              ...r,
-              doors: updatedDoors,
-              windows: updatedWindows
-            };
-          });
-          
-          // Set the final state with all updates in one go
-          setRooms(finalRooms);
-        } else {
-          // If no doors/windows or room not complete, just update the points
-          setRooms(newRooms);
-        }
       }
     } else if (isPanning && lastPanPosition) {
-      // Panning logic (unchanged)
+      // Panning logic
       const currentPos = getScreenMousePosition(e);
       const dx = currentPos.x - lastPanPosition.x;
       const dy = currentPos.y - lastPanPosition.y;
@@ -1967,89 +1920,99 @@ const RoomDesigner: React.FC = () => {
   ));
 };
 
-  const updateAttachedPoints = () => {
-    // Create a deep copy of rooms to avoid direct mutations
-    const updatedRooms = JSON.parse(JSON.stringify(rooms));
+const updateAttachedPoints = () => {
+  // Skip this function if we're currently dragging a point
+  if (isDragging) return;
+  
+  // Create a deep copy of rooms to avoid direct mutations
+  const updatedRooms = JSON.parse(JSON.stringify(rooms));
+  
+  // First identify all rooms with attached points
+  for (let i = 0; i < updatedRooms.length; i++) {
+    const room = updatedRooms[i];
     
-    // First identify all rooms with attached points
-    for (let i = 0; i < updatedRooms.length; i++) {
-      const room = updatedRooms[i];
+    for (let j = 0; j < room.points.length; j++) {
+      const point = room.points[j];
       
-      for (let j = 0; j < room.points.length; j++) {
-        const point = room.points[j];
+      if (point.attachedTo) {
+        // Find the parent room that this point is attached to
+        const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
         
-        if (point.attachedTo) {
-          // Find the parent room that this point is attached to
-          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+        if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
+          // Get the wall points from the parent room
+          const wallStartIndex = point.attachedTo.wallIndex;
+          const wallEndIndex = (wallStartIndex + 1) % parentRoom.points.length;
           
-          if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
-            // Get the wall points from the parent room
-            const wallStartIndex = point.attachedTo.wallIndex;
-            const wallEndIndex = (wallStartIndex + 1) % parentRoom.points.length;
-            
-            const wallStart = parentRoom.points[wallStartIndex];
-            const wallEnd = parentRoom.points[wallEndIndex];
-            
-            // Calculate the new position based on the parametric t value
-            const t = point.attachedTo.t;
-            const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
-            const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
-            
-            // Update the point's position
+          const wallStart = parentRoom.points[wallStartIndex];
+          const wallEnd = parentRoom.points[wallEndIndex];
+          
+          // Calculate the new position based on the parametric t value
+          // Use the existing t value - DON'T RESET IT
+          const t = point.attachedTo.t;
+          const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+          const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+          
+          // Update the point's position
+          point.x = newX;
+          point.y = newY;
+        }
+      }
+    }
+  }
+  
+  // Update state with the modified rooms
+  setRooms(updatedRooms);
+};
+
+const updateAttachedPointsAfterDrag = (draggingPoint) => {
+  if (!draggingPoint) return;
+  
+  // Create a new copy of all rooms
+  const updatedRooms = JSON.parse(JSON.stringify(rooms));
+  let needsUpdate = false;
+  
+  // Check each room for points that are attached to walls
+  for (let i = 0; i < updatedRooms.length; i++) {
+    const room = updatedRooms[i];
+    
+    for (let j = 0; j < room.points.length; j++) {
+      const point = room.points[j];
+      
+      // Skip the point that was just dragged - it already has its updated t value
+      if (room.id === draggingPoint.roomId && j === draggingPoint.index) {
+        continue;
+      }
+      
+      if (point.attachedTo) {
+        // Find the wall this point is attached to
+        const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+        
+        if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
+          const wallStart = parentRoom.points[point.attachedTo.wallIndex];
+          const wallEnd = parentRoom.points[(point.attachedTo.wallIndex + 1) % parentRoom.points.length];
+          
+          // Calculate the new position based on the parametric t value
+          // Use the existing t value - DON'T RESET IT
+          const t = point.attachedTo.t;
+          const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+          const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+          
+          // Only update if position has changed
+          if (point.x !== newX || point.y !== newY) {
             point.x = newX;
             point.y = newY;
+            needsUpdate = true;
           }
         }
       }
     }
-    
-    // Update state with the modified rooms
+  }
+  
+  // Only update state if something changed
+  if (needsUpdate) {
     setRooms(updatedRooms);
-  };
-
-  const updateAttachedPointsAfterDrag = (draggingPoint) => {
-    if (!draggingPoint) return;
-    
-    // Create a new copy of all rooms
-    const updatedRooms = JSON.parse(JSON.stringify(rooms));
-    let needsUpdate = false;
-    
-    // Check each room for points that are attached to walls
-    for (let i = 0; i < updatedRooms.length; i++) {
-      const room = updatedRooms[i];
-      
-      for (let j = 0; j < room.points.length; j++) {
-        const point = room.points[j];
-        
-        if (point.attachedTo) {
-          // Find the wall this point is attached to
-          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
-          
-          if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
-            const wallStart = parentRoom.points[point.attachedTo.wallIndex];
-            const wallEnd = parentRoom.points[(point.attachedTo.wallIndex + 1) % parentRoom.points.length];
-            
-            // Calculate the new position based on the parametric t value
-            const t = point.attachedTo.t;
-            const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
-            const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
-            
-            // Only update if position has changed
-            if (point.x !== newX || point.y !== newY) {
-              point.x = newX;
-              point.y = newY;
-              needsUpdate = true;
-            }
-          }
-        }
-      }
-    }
-    
-    // Only update state if something changed
-    if (needsUpdate) {
-      setRooms(updatedRooms);
-    }
-  };
+  }
+};
 
 
   const startAddingSecondaryRoom = () => {
