@@ -101,6 +101,7 @@ const RoomDesigner: React.FC = () => {
   const [windowStartPoint, setWindowStartPoint] = useState<{roomId: string, wallIndex: number, point: Point} | null>(null);
   const [windowHeight, setWindowHeight] = useState<number>(DEFAULT_WINDOW_HEIGHT);
   const [windowSillHeight, setWindowSillHeight] = useState<number>(DEFAULT_WINDOW_SILL_HEIGHT);
+  const lastDraggedPointRef = useRef<{roomId: string, index: number} | null>(null);
 
   // Initialize main room
   useEffect(() => {
@@ -117,6 +118,18 @@ const RoomDesigner: React.FC = () => {
       setActiveRoomId('main');
     }
   }, []);
+
+  useEffect(() => {
+    if (!isDragging && lastDraggedPointRef.current) {
+      const point = lastDraggedPointRef.current;
+      lastDraggedPointRef.current = null;
+      
+      setTimeout(() => {
+        updateAttachedPointsAfterDrag(point);
+      }, 200);
+    }
+  }, [isDragging]);
+
 
   // Get active room
   const activeRoom = useMemo(() => {
@@ -1554,20 +1567,28 @@ const RoomDesigner: React.FC = () => {
     if (isDragging) {
       const mousePos = getMousePosition(e);
       
+      // Store the selected point for use when drag ends
+      // if (selectedPoint) {
+      //   window.lastDraggedPoint = selectedPoint;
+      // }
+      if (selectedPoint) {
+        lastDraggedPointRef.current = { ...selectedPoint };
+      }
+      
       if (selectedWindowPoint) {
         // Window point movement logic (unchanged)
         const room = rooms.find(r => r.id === selectedWindowPoint.roomId);
         if (!room) return;
-  
+    
         const p1 = room.points[room.windows[selectedWindowPoint.windowIndex].wallIndex];
         const p2 = room.points[(room.windows[selectedWindowPoint.windowIndex].wallIndex + 1) % room.points.length];
         
         const closestPoint = findClosestPointOnLine(mousePos, p1, p2);
         if (!closestPoint) return;
-  
+    
         setRooms(rooms.map(r => {
           if (r.id !== selectedWindowPoint.roomId) return r;
-  
+    
           const newWindows = [...r.windows];
           const window = newWindows[selectedWindowPoint.windowIndex];
           
@@ -1588,23 +1609,23 @@ const RoomDesigner: React.FC = () => {
               Math.pow(closestPoint.y - window.startPoint.y, 2)
             );
           }
-  
+    
           return { ...r, windows: newWindows };
         }));
       } else if (selectedDoorPoint) {
         // Door point movement logic (unchanged)
         const room = rooms.find(r => r.id === selectedDoorPoint.roomId);
         if (!room) return;
-  
+    
         const p1 = room.points[room.doors[selectedDoorPoint.doorIndex].wallIndex];
         const p2 = room.points[(room.doors[selectedDoorPoint.doorIndex].wallIndex + 1) % room.points.length];
         
         const closestPoint = findClosestPointOnLine(mousePos, p1, p2);
         if (!closestPoint) return;
-  
+    
         setRooms(rooms.map(r => {
           if (r.id !== selectedDoorPoint.roomId) return r;
-  
+    
           const newDoors = [...r.doors];
           const door = newDoors[selectedDoorPoint.doorIndex];
           
@@ -1625,7 +1646,7 @@ const RoomDesigner: React.FC = () => {
               Math.pow(door.endPoint.y - closestPoint.y, 2)
             );
           }
-  
+    
           return { ...r, doors: newDoors };
         }));
       } else if (selectedPoint) {
@@ -1947,17 +1968,10 @@ const RoomDesigner: React.FC = () => {
 };
 
   const updateAttachedPoints = () => {
-    console.log("Updating attached points", rooms);
+    // Create a deep copy of rooms to avoid direct mutations
+    const updatedRooms = JSON.parse(JSON.stringify(rooms));
     
-    // Create a new copy of all rooms
-    const updatedRooms = [...rooms];
-    
-    // Check each room to see if it's still marked as complete
-    updatedRooms.forEach(room => {
-      console.log(`Room ${room.id}: isComplete = ${room.isComplete}`);
-    });
-    
-    // Check each room for points that are attached to walls
+    // First identify all rooms with attached points
     for (let i = 0; i < updatedRooms.length; i++) {
       const room = updatedRooms[i];
       
@@ -1965,15 +1979,19 @@ const RoomDesigner: React.FC = () => {
         const point = room.points[j];
         
         if (point.attachedTo) {
-          // Find the wall this point is attached to
-          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo!.roomId);
+          // Find the parent room that this point is attached to
+          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
           
-          if (parentRoom && parentRoom.points.length > point.attachedTo!.wallIndex) {
-            const wallStart = parentRoom.points[point.attachedTo!.wallIndex];
-            const wallEnd = parentRoom.points[(point.attachedTo!.wallIndex + 1) % parentRoom.points.length];
+          if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
+            // Get the wall points from the parent room
+            const wallStartIndex = point.attachedTo.wallIndex;
+            const wallEndIndex = (wallStartIndex + 1) % parentRoom.points.length;
+            
+            const wallStart = parentRoom.points[wallStartIndex];
+            const wallEnd = parentRoom.points[wallEndIndex];
             
             // Calculate the new position based on the parametric t value
-            const t = point.attachedTo!.t;
+            const t = point.attachedTo.t;
             const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
             const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
             
@@ -1985,20 +2003,52 @@ const RoomDesigner: React.FC = () => {
       }
     }
     
-    // Just before setting state, log what's about to happen
-    console.log("About to update rooms with attached points", updatedRooms);
-    
-    // Ensure we're not changing the isComplete property
-    updatedRooms.forEach((room, i) => {
-      // Preserve isComplete from original rooms
-      if (i < rooms.length && room.isComplete !== rooms[i].isComplete) {
-        console.error("isComplete changed unexpectedly for room", room.id);
-        room.isComplete = rooms[i].isComplete;
-      }
-    });
-    
-    // Update state
+    // Update state with the modified rooms
     setRooms(updatedRooms);
+  };
+
+  const updateAttachedPointsAfterDrag = (draggingPoint) => {
+    if (!draggingPoint) return;
+    
+    // Create a new copy of all rooms
+    const updatedRooms = JSON.parse(JSON.stringify(rooms));
+    let needsUpdate = false;
+    
+    // Check each room for points that are attached to walls
+    for (let i = 0; i < updatedRooms.length; i++) {
+      const room = updatedRooms[i];
+      
+      for (let j = 0; j < room.points.length; j++) {
+        const point = room.points[j];
+        
+        if (point.attachedTo) {
+          // Find the wall this point is attached to
+          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+          
+          if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
+            const wallStart = parentRoom.points[point.attachedTo.wallIndex];
+            const wallEnd = parentRoom.points[(point.attachedTo.wallIndex + 1) % parentRoom.points.length];
+            
+            // Calculate the new position based on the parametric t value
+            const t = point.attachedTo.t;
+            const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+            const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+            
+            // Only update if position has changed
+            if (point.x !== newX || point.y !== newY) {
+              point.x = newX;
+              point.y = newY;
+              needsUpdate = true;
+            }
+          }
+        }
+      }
+    }
+    
+    // Only update state if something changed
+    if (needsUpdate) {
+      setRooms(updatedRooms);
+    }
   };
 
 
