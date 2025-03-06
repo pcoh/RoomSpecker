@@ -94,6 +94,8 @@ const RoomDesigner: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [scale, setScale] = useState(0.08);
   const [editingAngles, setEditingAngles] = useState<{ [key: string]: string }>({});
+  const [editingWallLengths, setEditingWallLengths] = useState<{ [key: string]: string }>({});
+  const [editingCoordinates, setEditingCoordinates] = useState<{ [key: string]: { x: string, y: string } }>({});
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [addingDoor, setAddingDoor] = useState(false);
   const [doorStartPoint, setDoorStartPoint] = useState<{roomId: string, wallIndex: number, point: Point} | null>(null);
@@ -102,6 +104,9 @@ const RoomDesigner: React.FC = () => {
   const [windowHeight, setWindowHeight] = useState<number>(DEFAULT_WINDOW_HEIGHT);
   const [windowSillHeight, setWindowSillHeight] = useState<number>(DEFAULT_WINDOW_SILL_HEIGHT);
   const lastDraggedPointRef = useRef<{roomId: string, index: number} | null>(null);
+
+  
+  
 
   // Initialize main room
   useEffect(() => {
@@ -672,7 +677,7 @@ const RoomDesigner: React.FC = () => {
       const newPoints = [...r.points];
       
       // If this point is attached to a wall, handle it specially
-      if (index > 0 && newPoints[index].attachedTo) {
+      if (newPoints[index].attachedTo) {
         // Get the wall this point is attached to
         const attachedTo = newPoints[index].attachedTo;
         const parentRoom = rooms.find(pr => pr.id === attachedTo.roomId);
@@ -2055,10 +2060,119 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const newAngle = Number(editingAngles[key]);
     if (!isNaN(newAngle)) {
       updateAngle(roomId, index, newAngle);
+      
+      // Force a re-render after a short delay
+      setTimeout(() => {
+        setRooms(prevRooms => [...prevRooms]);
+      }, 50);
     }
     const newEditingAngles = { ...editingAngles };
     delete newEditingAngles[key];
     setEditingAngles(newEditingAngles);
+  };
+
+  const handleWallLengthChange = (roomId: string, index: number, value: string) => {
+    setEditingWallLengths({ ...editingWallLengths, [`${roomId}-${index}`]: value });
+  };
+  
+  const handleWallLengthBlur = (roomId: string, index: number) => {
+    const key = `${roomId}-${index}`;
+    const newLength = Number(editingWallLengths[key]);
+    if (!isNaN(newLength) && newLength > 0) {
+      // Use functional update pattern
+      setRooms(prevRooms => {
+        // Create a deep copy
+        const newRooms = JSON.parse(JSON.stringify(prevRooms));
+        const roomIndex = newRooms.findIndex(room => room.id === roomId);
+        
+        if (roomIndex >= 0) {
+          const room = newRooms[roomIndex];
+          const currentPoint = room.points[index];
+          const nextPointIndex = (index + 1) % room.points.length;
+          const nextPoint = room.points[nextPointIndex];
+          
+          // Skip if the next point is attached to another wall
+          if (nextPoint.attachedTo) return newRooms;
+          
+          // Calculate angle between points
+          const angle = Math.atan2(
+            nextPoint.y - currentPoint.y,
+            nextPoint.x - currentPoint.x
+          );
+          
+          // Set new endpoint based on length and angle
+          room.points[nextPointIndex] = {
+            ...room.points[nextPointIndex],
+            x: currentPoint.x + Math.cos(angle) * newLength,
+            y: currentPoint.y + Math.sin(angle) * newLength
+          };
+          
+          // Update doors and windows if needed
+          if (room.isComplete && (room.doors.length > 0 || room.windows.length > 0)) {
+            const oldPoints = prevRooms[roomIndex].points;
+            updateDoorsAndWindows(roomId, room.points, oldPoints);
+          }
+        }
+        
+        return newRooms;
+      });
+    }
+    
+    // Clear the editing state
+    const newEditingWallLengths = { ...editingWallLengths };
+    delete newEditingWallLengths[key];
+    setEditingWallLengths(newEditingWallLengths);
+  };
+  
+  const handleCoordinateChange = (roomId: string, index: number, axis: 'x' | 'y', value: string) => {
+    const key = `${roomId}-${index}`;
+    const current = editingCoordinates[key] || { 
+      x: Math.round(rooms.find(r => r.id === roomId)?.points[index]?.x || 0).toString(), 
+      y: Math.round(rooms.find(r => r.id === roomId)?.points[index]?.y || 0).toString() 
+    };
+    setEditingCoordinates({ 
+      ...editingCoordinates, 
+      [key]: { ...current, [axis]: value } 
+    });
+  };
+  
+  const handleCoordinateBlur = (roomId: string, index: number) => {
+    const key = `${roomId}-${index}`;
+    const coords = editingCoordinates[key];
+    if (coords) {
+      const x = Number(coords.x);
+      const y = Number(coords.y);
+      if (!isNaN(x) && !isNaN(y)) {
+        // Use functional update pattern
+        setRooms(prevRooms => {
+          // Create a deep copy to ensure we're not modifying the existing state
+          const newRooms = JSON.parse(JSON.stringify(prevRooms));
+          const roomIndex = newRooms.findIndex(room => room.id === roomId);
+          
+          if (roomIndex >= 0) {
+            // Update the specific point directly
+            newRooms[roomIndex].points[index].x = x;
+            newRooms[roomIndex].points[index].y = y;
+            
+            // If this is a complete room with doors/windows, update them
+            if (newRooms[roomIndex].isComplete && 
+               (newRooms[roomIndex].doors.length > 0 || newRooms[roomIndex].windows.length > 0)) {
+              // Update doors and windows positions based on the new point
+              // This is a simplified version - you would implement the full update
+              const oldPoints = prevRooms[roomIndex].points;
+              updateDoorsAndWindows(roomId, newRooms[roomIndex].points, oldPoints);
+            }
+          }
+          
+          return newRooms;
+        });
+      }
+    }
+    
+    // Clear the editing state
+    const newEditingCoordinates = { ...editingCoordinates };
+    delete newEditingCoordinates[key];
+    setEditingCoordinates(newEditingCoordinates);
   };
 
   const drawRoom = () => {
@@ -2422,26 +2536,56 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <input
-                          type="number"
-                          value={Math.round(point.x)}
-                          onChange={(e) => updatePoint(activeRoom.id, index, Number(e.target.value), point.y)}
+                          type="text"
+                          value={
+                            editingCoordinates[`${activeRoom.id}-${index}`]?.x !== undefined 
+                              ? editingCoordinates[`${activeRoom.id}-${index}`].x 
+                              : Math.round(point.x).toString()
+                          }
+                          onChange={(e) => handleCoordinateChange(activeRoom.id, index, 'x', e.target.value)}
+                          onBlur={() => handleCoordinateBlur(activeRoom.id, index)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.target.blur(); // Trigger onBlur to apply the change
+                            }
+                          }}
                           className="w-24 px-2 py-1 border border-gray-300 rounded"
                         />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <input
-                          type="number"
-                          value={Math.round(point.y)}
-                          onChange={(e) => updatePoint(activeRoom.id, index, point.x, Number(e.target.value))}
+                          type="text"
+                          value={
+                            editingCoordinates[`${activeRoom.id}-${index}`]?.y !== undefined 
+                              ? editingCoordinates[`${activeRoom.id}-${index}`].y 
+                              : Math.round(point.y).toString()
+                          }
+                          onChange={(e) => handleCoordinateChange(activeRoom.id, index, 'y', e.target.value)}
+                          onBlur={() => handleCoordinateBlur(activeRoom.id, index)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.target.blur(); // Trigger onBlur to apply the change
+                            }
+                          }}
                           className="w-24 px-2 py-1 border border-gray-300 rounded"
                         />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {index < activeRoom.points.length - 1 || activeRoom.isComplete ? (
                           <input
-                            type="number"
-                            value={Math.round(wallData[index]?.length || 0)}
-                            onChange={(e) => updateWallLength(activeRoom.id, index, Number(e.target.value))}
+                            type="text"
+                            value={
+                              editingWallLengths[`${activeRoom.id}-${index}`] !== undefined 
+                                ? editingWallLengths[`${activeRoom.id}-${index}`] 
+                                : Math.round(wallData[index]?.length || 0).toString()
+                            }
+                            onChange={(e) => handleWallLengthChange(activeRoom.id, index, e.target.value)}
+                            onBlur={() => handleWallLengthBlur(activeRoom.id, index)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.target.blur(); // Trigger onBlur to apply the change
+                              }
+                            }}
                             className="w-24 px-2 py-1 border border-gray-300 rounded"
                           />
                         ) : null}
@@ -2455,6 +2599,11 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                               : wallData[index]?.angle.toFixed(1) || '0'}
                             onChange={(e) => handleAngleChange(activeRoom.id, index, e.target.value)}
                             onBlur={() => handleAngleBlur(activeRoom.id, index)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.target.blur(); // Trigger onBlur to apply the change
+                              }
+                            }}
                             className="w-24 px-2 py-1 border border-gray-300 rounded"
                           />
                         ) : null}
