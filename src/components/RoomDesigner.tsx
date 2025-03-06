@@ -2059,13 +2059,58 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const key = `${roomId}-${index}`;
     const newAngle = Number(editingAngles[key]);
     if (!isNaN(newAngle)) {
-      updateAngle(roomId, index, newAngle);
-      
-      // Force a re-render after a short delay
-      setTimeout(() => {
-        setRooms(prevRooms => [...prevRooms]);
-      }, 50);
+      // Use functional update pattern
+      setRooms(prevRooms => {
+        // Create a deep copy
+        const newRooms = JSON.parse(JSON.stringify(prevRooms));
+        const roomIndex = newRooms.findIndex(room => room.id === roomId);
+        
+        if (roomIndex >= 0) {
+          const room = newRooms[roomIndex];
+          const currentPoint = room.points[index];
+          const prevPointIndex = (index - 1 + room.points.length) % room.points.length;
+          const prevPoint = room.points[prevPointIndex];
+          const nextPointIndex = (index + 1) % room.points.length;
+          const nextPoint = room.points[nextPointIndex];
+          
+          // Skip if the next point is attached to another wall
+          if (nextPoint.attachedTo) return newRooms;
+          
+          // Calculate angle between previous point and current point
+          const angle1 = Math.atan2(
+            prevPoint.y - currentPoint.y,
+            prevPoint.x - currentPoint.x
+          );
+          
+          // Convert angle from degrees to radians and adjust
+          const angleRad = (-newAngle * Math.PI) / 180;
+          const newAngleRad = angle1 + angleRad;
+          
+          // Calculate current wall length
+          const currentWallLength = Math.sqrt(
+            Math.pow(nextPoint.x - currentPoint.x, 2) + 
+            Math.pow(nextPoint.y - currentPoint.y, 2)
+          );
+          
+          // Set new endpoint based on angle and length
+          room.points[nextPointIndex] = {
+            ...room.points[nextPointIndex],
+            x: currentPoint.x + currentWallLength * Math.cos(newAngleRad),
+            y: currentPoint.y + currentWallLength * Math.sin(newAngleRad)
+          };
+          
+          // Update doors and windows if needed
+          if (room.isComplete && (room.doors.length > 0 || room.windows.length > 0)) {
+            const oldPoints = prevRooms[roomIndex].points;
+            updateDoorsAndWindows(roomId, room.points, oldPoints);
+          }
+        }
+        
+        return newRooms;
+      });
     }
+    
+    // Clear the editing state
     const newEditingAngles = { ...editingAngles };
     delete newEditingAngles[key];
     setEditingAngles(newEditingAngles);
