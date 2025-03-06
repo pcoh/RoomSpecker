@@ -124,6 +124,25 @@ const RoomDesigner: React.FC = () => {
     }
   }, []);
 
+  // useEffect(() => {
+  //   if (!isDragging && lastDraggedPointRef.current) {
+  //     const point = lastDraggedPointRef.current;
+  //     lastDraggedPointRef.current = null;
+      
+  //     // Only call this after dragging has completely finished
+  //     setTimeout(() => {
+  //       updateAttachedPointsAfterDrag(point);
+  //     }, 200);
+  //   }
+  // }, [isDragging]);
+
+  // useEffect(() => {
+  //   if (!isDragging && lastDraggedPointRef.current) {
+  //     lastDraggedPointRef.current = null;
+  //     // We don't need the setTimeout here anymore since we're updating continuously
+  //   }
+  // }, [isDragging]);
+
   useEffect(() => {
     if (!isDragging && lastDraggedPointRef.current) {
       const point = lastDraggedPointRef.current;
@@ -1607,6 +1626,198 @@ const RoomDesigner: React.FC = () => {
     }
   };
 
+  // const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  //   if (isDragging) {
+  //     const mousePos = getMousePosition(e);
+      
+  //     // Store the selected point for use when drag ends
+  //     if (selectedPoint) {
+  //       lastDraggedPointRef.current = { ...selectedPoint };
+        
+  //       // Get the room with the selected point
+  //       const room = rooms.find(r => r.id === selectedPoint.roomId);
+  //       if (!room) return;
+        
+  //       const pointIndex = selectedPoint.index;
+  //       const point = room.points[pointIndex];
+        
+  //       // Check if this point is attached to a wall (any point, not just index > 0)
+  //       if (point.attachedTo) {
+  //         // Find the parent room and wall this point is attached to
+  //         const parentRoom = rooms.find(r => r.id === point.attachedTo.roomId);
+  //         if (!parentRoom) return;
+          
+  //         const wallIndex = point.attachedTo.wallIndex;
+  //         const wallStart = parentRoom.points[wallIndex];
+  //         const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
+          
+  //         // Project the mouse position onto the wall
+  //         const wallVectorX = wallEnd.x - wallStart.x;
+  //         const wallVectorY = wallEnd.y - wallStart.y;
+  //         const wallLength = Math.sqrt(wallVectorX * wallVectorX + wallVectorY * wallVectorY);
+          
+  //         if (wallLength === 0) return;
+          
+  //         // Calculate dot product to find the projection
+  //         const dotProduct = ((mousePos.x - wallStart.x) * wallVectorX + (mousePos.y - wallStart.y) * wallVectorY);
+          
+  //         // Clamp the projection to be within the wall segment
+  //         const t = Math.max(0, Math.min(1, dotProduct / (wallLength * wallLength)));
+          
+  //         // Create the updated point position on the wall
+  //         const updatedPoint = {
+  //           x: wallStart.x + t * wallVectorX,
+  //           y: wallStart.y + t * wallVectorY
+  //         };
+          
+  //         // Update the rooms state with the new projected position - ONLY modify the selected point
+  //         setRooms(prevRooms => {
+  //           return prevRooms.map(r => {
+  //             if (r.id !== selectedPoint.roomId) return r;
+              
+  //             const newPoints = [...r.points];
+  //             newPoints[pointIndex] = {
+  //               ...newPoints[pointIndex],
+  //               x: updatedPoint.x,
+  //               y: updatedPoint.y,
+  //               attachedTo: {
+  //                 roomId: point.attachedTo.roomId,
+  //                 wallIndex: point.attachedTo.wallIndex,
+  //                 t: t  // Update the t parameter to allow movement along the wall
+  //               }
+  //             };
+              
+  //             return { ...r, points: newPoints };
+  //           });
+  //         });
+          
+  //         return; // Return early to prevent other point handling logic from running
+  //       }
+        
+  //       // Handle origin point movement (moves all points)
+  //       if (pointIndex === 0) {
+  //         // Check if the first point is attached to a wall
+  //         if (point.attachedTo) {
+  //           // Already handled above, just return
+  //           return;
+  //         }
+          
+  //         // If not attached, then move all points as before
+  //         setRooms(rooms.map(r => {
+  //           if (r.id !== selectedPoint.roomId) return r;
+            
+  //           const dx = mousePos.x - r.points[0].x;
+  //           const dy = mousePos.y - r.points[0].y;
+            
+  //           const newPoints = r.points.map(p => ({
+  //             ...p,
+  //             x: p.x + dx,
+  //             y: p.y + dy
+  //           }));
+            
+  //           return { ...r, points: newPoints };
+  //         }));
+  //       } else {
+  //         // Regular point movement (non-attached, non-origin) - ONLY move this specific point
+  //         setRooms(rooms.map(r => {
+  //           if (r.id !== selectedPoint.roomId) return r;
+            
+  //           const newPoints = [...r.points];
+  //           newPoints[pointIndex] = { ...newPoints[pointIndex], x: mousePos.x, y: mousePos.y };
+            
+  //           return { ...r, points: newPoints };
+  //         }));
+  //       }
+  //     } else if (selectedWindowPoint) {
+  //       // Window point movement logic
+  //       const room = rooms.find(r => r.id === selectedWindowPoint.roomId);
+  //       if (!room) return;
+    
+  //       const p1 = room.points[room.windows[selectedWindowPoint.windowIndex].wallIndex];
+  //       const p2 = room.points[(room.windows[selectedWindowPoint.windowIndex].wallIndex + 1) % room.points.length];
+        
+  //       const closestPoint = findClosestPointOnLine(mousePos, p1, p2);
+  //       if (!closestPoint) return;
+    
+  //       setRooms(rooms.map(r => {
+  //         if (r.id !== selectedWindowPoint.roomId) return r;
+    
+  //         const newWindows = [...r.windows];
+  //         const window = newWindows[selectedWindowPoint.windowIndex];
+          
+  //         if (selectedWindowPoint.pointType === 'start') {
+  //           window.startPoint = closestPoint;
+  //           window.position = Math.sqrt(
+  //             Math.pow(closestPoint.x - p1.x, 2) + 
+  //             Math.pow(closestPoint.y - p1.y, 2)
+  //           );
+  //           window.width = Math.sqrt(
+  //             Math.pow(window.endPoint.x - closestPoint.x, 2) + 
+  //             Math.pow(window.endPoint.y - closestPoint.y, 2)
+  //           );
+  //         } else {
+  //           window.endPoint = closestPoint;
+  //           window.width = Math.sqrt(
+  //             Math.pow(closestPoint.x - window.startPoint.x, 2) + 
+  //             Math.pow(closestPoint.y - window.startPoint.y, 2)
+  //           );
+  //         }
+    
+  //         return { ...r, windows: newWindows };
+  //       }));
+  //     } else if (selectedDoorPoint) {
+  //       // Door point movement logic
+  //       const room = rooms.find(r => r.id === selectedDoorPoint.roomId);
+  //       if (!room) return;
+    
+  //       const p1 = room.points[room.doors[selectedDoorPoint.doorIndex].wallIndex];
+  //       const p2 = room.points[(room.doors[selectedDoorPoint.doorIndex].wallIndex + 1) % room.points.length];
+        
+  //       const closestPoint = findClosestPointOnLine(mousePos, p1, p2);
+  //       if (!closestPoint) return;
+    
+  //       setRooms(rooms.map(r => {
+  //         if (r.id !== selectedDoorPoint.roomId) return r;
+    
+  //         const newDoors = [...r.doors];
+  //         const door = newDoors[selectedDoorPoint.doorIndex];
+          
+  //         if (selectedDoorPoint.pointType === 'start') {
+  //           door.startPoint = closestPoint;
+  //           door.position = Math.sqrt(
+  //             Math.pow(closestPoint.x - p1.x, 2) + 
+  //             Math.pow(closestPoint.y - p1.y, 2)
+  //           );
+  //           door.width = Math.sqrt(
+  //             Math.pow(door.endPoint.x - closestPoint.x, 2) + 
+  //             Math.pow(door.endPoint.y - closestPoint.y, 2)
+  //           );
+  //         } else {
+  //           door.endPoint = closestPoint;
+  //           door.width = Math.sqrt(
+  //             Math.pow(closestPoint.x - door.startPoint.x, 2) + 
+  //             Math.pow(door.startPoint.y - closestPoint.y, 2)
+  //           );
+  //         }
+    
+  //         return { ...r, doors: newDoors };
+  //       }));
+  //     }
+  //   } else if (isPanning && lastPanPosition) {
+  //     // Panning logic
+  //     const currentPos = getScreenMousePosition(e);
+  //     const dx = currentPos.x - lastPanPosition.x;
+  //     const dy = currentPos.y - lastPanPosition.y;
+      
+  //     setPan(prevPan => ({
+  //       x: prevPan.x + dx,
+  //       y: prevPan.y - dy
+  //     }));
+      
+  //     setLastPanPosition(currentPos);
+  //   }
+  // };
+
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging) {
       const mousePos = getMousePosition(e);
@@ -1672,6 +1883,7 @@ const RoomDesigner: React.FC = () => {
             });
           });
           
+          setTimeout(updateAttachedPoints, 0);
           return; // Return early to prevent other point handling logic from running
         }
         
@@ -1698,6 +1910,8 @@ const RoomDesigner: React.FC = () => {
             
             return { ...r, points: newPoints };
           }));
+          
+          setTimeout(updateAttachedPoints, 0);
         } else {
           // Regular point movement (non-attached, non-origin) - ONLY move this specific point
           setRooms(rooms.map(r => {
@@ -1708,6 +1922,8 @@ const RoomDesigner: React.FC = () => {
             
             return { ...r, points: newPoints };
           }));
+          
+          setTimeout(updateAttachedPoints, 0);
         }
       } else if (selectedWindowPoint) {
         // Window point movement logic
@@ -1746,6 +1962,8 @@ const RoomDesigner: React.FC = () => {
     
           return { ...r, windows: newWindows };
         }));
+        
+        setTimeout(updateAttachedPoints, 0);
       } else if (selectedDoorPoint) {
         // Door point movement logic
         const room = rooms.find(r => r.id === selectedDoorPoint.roomId);
@@ -1783,6 +2001,8 @@ const RoomDesigner: React.FC = () => {
     
           return { ...r, doors: newDoors };
         }));
+        
+        setTimeout(updateAttachedPoints, 0);
       }
     } else if (isPanning && lastPanPosition) {
       // Panning logic
@@ -1798,7 +2018,7 @@ const RoomDesigner: React.FC = () => {
       setLastPanPosition(currentPos);
     }
   };
-
+  
   const handleCanvasMouseUp = () => {
     setIsDragging(false);
     setSelectedPoint(null);
@@ -1925,16 +2145,60 @@ const RoomDesigner: React.FC = () => {
   ));
 };
 
+// const updateAttachedPoints = () => {
+//   // Skip this function if we're currently dragging a point
+//   if (isDragging) return;
+  
+//   // Create a deep copy of rooms to avoid direct mutations
+//   const updatedRooms = JSON.parse(JSON.stringify(rooms));
+  
+//   // First identify all rooms with attached points
+//   for (let i = 0; i < updatedRooms.length; i++) {
+//     const room = updatedRooms[i];
+    
+//     for (let j = 0; j < room.points.length; j++) {
+//       const point = room.points[j];
+      
+//       if (point.attachedTo) {
+//         // Find the parent room that this point is attached to
+//         const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+        
+//         if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
+//           // Get the wall points from the parent room
+//           const wallStartIndex = point.attachedTo.wallIndex;
+//           const wallEndIndex = (wallStartIndex + 1) % parentRoom.points.length;
+          
+//           const wallStart = parentRoom.points[wallStartIndex];
+//           const wallEnd = parentRoom.points[wallEndIndex];
+          
+//           // Calculate the new position based on the parametric t value
+//           // Use the existing t value - DON'T RESET IT
+//           const t = point.attachedTo.t;
+//           const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+//           const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+          
+//           // Update the point's position
+//           point.x = newX;
+//           point.y = newY;
+//         }
+//       }
+//     }
+//   }
+  
+//   // Update state with the modified rooms
+//   setRooms(updatedRooms);
+// };
 const updateAttachedPoints = () => {
-  // Skip this function if we're currently dragging a point
-  if (isDragging) return;
+  // Create a new array to avoid direct mutations
+  const updatedRooms = [...rooms];
+  let needsUpdate = false;
   
-  // Create a deep copy of rooms to avoid direct mutations
-  const updatedRooms = JSON.parse(JSON.stringify(rooms));
-  
-  // First identify all rooms with attached points
+  // Check each room for points that are attached to walls
   for (let i = 0; i < updatedRooms.length; i++) {
     const room = updatedRooms[i];
+    
+    // Skip the active room that's being dragged (its points are already being updated)
+    if (selectedPoint && room.id === selectedPoint.roomId) continue;
     
     for (let j = 0; j < room.points.length; j++) {
       const point = room.points[j];
@@ -1952,21 +2216,25 @@ const updateAttachedPoints = () => {
           const wallEnd = parentRoom.points[wallEndIndex];
           
           // Calculate the new position based on the parametric t value
-          // Use the existing t value - DON'T RESET IT
           const t = point.attachedTo.t;
           const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
           const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
           
-          // Update the point's position
-          point.x = newX;
-          point.y = newY;
+          // Only update if position has changed
+          if (point.x !== newX || point.y !== newY) {
+            point.x = newX;
+            point.y = newY;
+            needsUpdate = true;
+          }
         }
       }
     }
   }
   
-  // Update state with the modified rooms
-  setRooms(updatedRooms);
+  // Only update state if something changed
+  if (needsUpdate) {
+    setRooms([...updatedRooms]); // Create a new array to trigger a re-render
+  }
 };
 
 const updateAttachedPointsAfterDrag = (draggingPoint) => {
@@ -2068,33 +2336,27 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         if (roomIndex >= 0) {
           const room = newRooms[roomIndex];
           const currentPoint = room.points[index];
-          const prevPointIndex = (index - 1 + room.points.length) % room.points.length;
-          const prevPoint = room.points[prevPointIndex];
-          const nextPointIndex = (index + 1) % room.points.length;
-          const nextPoint = room.points[nextPointIndex];
+          const prevPoint = room.points[(index - 1 + room.points.length) % room.points.length];
+          const nextPoint = room.points[(index + 1) % room.points.length];
           
           // Skip if the next point is attached to another wall
           if (nextPoint.attachedTo) return newRooms;
           
-          // Calculate angle between previous point and current point
           const angle1 = Math.atan2(
             prevPoint.y - currentPoint.y,
             prevPoint.x - currentPoint.x
           );
           
-          // Convert angle from degrees to radians and adjust
           const angleRad = (-newAngle * Math.PI) / 180;
           const newAngleRad = angle1 + angleRad;
           
-          // Calculate current wall length
           const currentWallLength = Math.sqrt(
             Math.pow(nextPoint.x - currentPoint.x, 2) + 
             Math.pow(nextPoint.y - currentPoint.y, 2)
           );
           
-          // Set new endpoint based on angle and length
-          room.points[nextPointIndex] = {
-            ...room.points[nextPointIndex],
+          newRooms[roomIndex].points[(index + 1) % room.points.length] = {
+            ...newRooms[roomIndex].points[(index + 1) % room.points.length], // Preserve attachedTo and other properties
             x: currentPoint.x + currentWallLength * Math.cos(newAngleRad),
             y: currentPoint.y + currentWallLength * Math.sin(newAngleRad)
           };
@@ -2102,12 +2364,26 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           // Update doors and windows if needed
           if (room.isComplete && (room.doors.length > 0 || room.windows.length > 0)) {
             const oldPoints = prevRooms[roomIndex].points;
-            updateDoorsAndWindows(roomId, room.points, oldPoints);
+            updateDoorsAndWindows(roomId, newRooms[roomIndex].points, oldPoints);
           }
         }
         
         return newRooms;
       });
+      
+      // After updating the state, simulate a drag operation
+      // Set lastDraggedPointRef to the point that was just moved
+      const nextPointIndex = (index + 1) % rooms.find(r => r.id === roomId).points.length;
+      lastDraggedPointRef.current = { roomId: roomId, index: nextPointIndex };
+      
+      // Temporarily set isDragging to true and then false to trigger the useEffect
+      setIsDragging(true);
+      
+      // Use setTimeout to set isDragging back to false after a short delay
+      // This will trigger the useEffect that calls updateAttachedPointsAfterDrag
+      setTimeout(() => {
+        setIsDragging(false);
+      }, 50);
     }
     
     // Clear the editing state
@@ -2161,13 +2437,27 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         
         return newRooms;
       });
+      
+      // After updating the state, simulate a drag operation
+      // Set lastDraggedPointRef to the point that was just moved
+      const nextPointIndex = (index + 1) % rooms.find(r => r.id === roomId).points.length;
+      lastDraggedPointRef.current = { roomId: roomId, index: nextPointIndex };
+      
+      // Temporarily set isDragging to true and then false to trigger the useEffect
+      setIsDragging(true);
+      
+      // Use setTimeout to set isDragging back to false after a short delay
+      // This will trigger the useEffect that calls updateAttachedPointsAfterDrag
+      setTimeout(() => {
+        setIsDragging(false);
+      }, 50);
     }
     
     // Clear the editing state
     const newEditingWallLengths = { ...editingWallLengths };
     delete newEditingWallLengths[key];
     setEditingWallLengths(newEditingWallLengths);
-  };
+  }
   
   const handleCoordinateChange = (roomId: string, index: number, axis: 'x' | 'y', value: string) => {
     const key = `${roomId}-${index}`;
@@ -2203,7 +2493,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             if (newRooms[roomIndex].isComplete && 
                (newRooms[roomIndex].doors.length > 0 || newRooms[roomIndex].windows.length > 0)) {
               // Update doors and windows positions based on the new point
-              // This is a simplified version - you would implement the full update
               const oldPoints = prevRooms[roomIndex].points;
               updateDoorsAndWindows(roomId, newRooms[roomIndex].points, oldPoints);
             }
@@ -2211,6 +2500,19 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           
           return newRooms;
         });
+        
+        // After updating the state, simulate a drag operation
+        // Set lastDraggedPointRef to the point that was just moved
+        lastDraggedPointRef.current = { roomId: roomId, index: index };
+        
+        // Temporarily set isDragging to true and then false to trigger the useEffect
+        setIsDragging(true);
+        
+        // Use setTimeout to set isDragging back to false after a short delay
+        // This will trigger the useEffect that calls updateAttachedPointsAfterDrag
+        setTimeout(() => {
+          setIsDragging(false);
+        }, 50);
       }
     }
     
