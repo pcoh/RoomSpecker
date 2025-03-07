@@ -2273,6 +2273,170 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     setEditingCoordinates(newEditingCoordinates);
   };
 
+  const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    
+    const mousePos = getMousePosition(e);
+    
+    // Check if clicking on a point
+    const nearestPoint = findNearestPoint(mousePos);
+    if (nearestPoint) {
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        type: 'point',
+        data: {
+          index: nearestPoint.index,
+          point: nearestPoint.point
+        }
+      });
+      return;
+    }
+    
+    // Check if clicking on a line
+    const closestLine = findClosestLine(mousePos);
+    if (closestLine) {
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        type: 'line',
+        data: {
+          index: closestLine.wallIndex
+        }
+      });
+      return;
+    }
+    
+    // Close the menu if clicking on empty space
+    setContextMenu(null);
+  };
+
+  const handleAddPointOnLine = (roomId: string, wallIndex: number, point: Point) => {
+    // Find the room
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Insert the new point between the wall's start and end points
+    const newPoints = [...room.points];
+    newPoints.splice(wallIndex + 1, 0, point);
+    
+    // Store old points for door/window updates
+    const oldPoints = [...room.points];
+    
+    // Update the room with the new point
+    setRooms(rooms.map(r => {
+      if (r.id !== roomId) return r;
+      
+      // For completed rooms with doors/windows, update them in one step
+      if (r.isComplete && (r.doors.length > 0 || r.windows.length > 0)) {
+        const { doors, windows } = getUpdatedDoorsAndWindows(r, newPoints, oldPoints);
+        
+        // Update doors wall indices after the insertion point
+        const updatedDoors = doors.map(door => {
+          if (door.wallIndex >= wallIndex + 1) {
+            return { ...door, wallIndex: door.wallIndex + 1 };
+          }
+          return door;
+        });
+        
+        // Update windows wall indices after the insertion point
+        const updatedWindows = windows.map(window => {
+          if (window.wallIndex >= wallIndex + 1) {
+            return { ...window, wallIndex: window.wallIndex + 1 };
+          }
+          return window;
+        });
+        
+        return { 
+          ...r, 
+          points: newPoints,
+          doors: updatedDoors,
+          windows: updatedWindows
+        };
+      }
+      
+      return { ...r, points: newPoints };
+    }));
+    
+    // After adding a point, update attached points from other rooms
+    setTimeout(updateAttachedPoints, 0);
+    
+    // Close the context menu
+    setContextMenu(null);
+  };
+
+
+  const handleDeletePoint = (roomId: string, pointIndex: number) => {
+    // Find the room
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) return;
+    
+    // Can't delete points if there are fewer than 4 points in a completed room
+    // or fewer than 2 points in an incomplete room
+    if ((room.isComplete && room.points.length <= 4) || 
+        (!room.isComplete && room.points.length <= 2)) {
+      alert('Cannot delete point: minimum number of points reached');
+      setContextMenu(null);
+      return;
+    }
+    
+    // Store old points for door/window updates
+    const oldPoints = [...room.points];
+    
+    // Remove the point
+    const newPoints = room.points.filter((_, index) => index !== pointIndex);
+    
+    // Update the room without the deleted point
+    setRooms(rooms.map(r => {
+      if (r.id !== roomId) return r;
+      
+      // For completed rooms with doors/windows, update them in one step
+      if (r.isComplete && (r.doors.length > 0 || r.windows.length > 0)) {
+        // Remove doors and windows on the deleted wall
+        let updatedDoors = r.doors.filter(door => door.wallIndex !== pointIndex);
+        let updatedWindows = r.windows.filter(window => window.wallIndex !== pointIndex);
+        
+        // Update wall indices for doors and windows after the deleted point
+        updatedDoors = updatedDoors.map(door => {
+          if (door.wallIndex > pointIndex) {
+            return { ...door, wallIndex: door.wallIndex - 1 };
+          }
+          return door;
+        });
+        
+        updatedWindows = updatedWindows.map(window => {
+          if (window.wallIndex > pointIndex) {
+            return { ...window, wallIndex: window.wallIndex - 1 };
+          }
+          return window;
+        });
+        
+        // Update the positions of doors and windows that remain
+        const { doors, windows } = getUpdatedDoorsAndWindows(
+          { ...r, doors: updatedDoors, windows: updatedWindows },
+          newPoints, 
+          oldPoints
+        );
+        
+        return { 
+          ...r, 
+          points: newPoints,
+          doors,
+          windows
+        };
+      }
+      
+      return { ...r, points: newPoints };
+    }));
+    
+    // After deleting a point, update attached points from other rooms
+    setTimeout(updateAttachedPoints, 0);
+    
+    // Close the context menu
+    setContextMenu(null);
+  };
+  
+
   const drawRoom = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -2579,9 +2743,58 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           onMouseUp={handleCanvasMouseUp}
           onMouseLeave={handleCanvasMouseUp}
           onWheel={handleWheel}
+          onContextMenu={handleContextMenu}
           className="border border-gray-300 rounded cursor-crosshair"
         />
+
+{contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        >
+          {contextMenu.type === 'point' && (
+            <div>
+              <button
+                className="block w-full text-left px-4 py-2 hover:bg-gray-100"
+                onClick={() => {
+                  const pointInfo = contextMenu.data;
+                  if (pointInfo && pointInfo.point) {
+                    const roomId = pointInfo.point.roomId || 
+                                  (activeRoomId ? activeRoomId : rooms.find(r => r.isMain)?.id || '');
+                    handleDeletePoint(roomId, pointInfo.index);
+                  }
+                }}
+              >
+                Delete Point
+              </button>
+            </div>
+          )}
+          {contextMenu.type === 'line' && (
+            <div>
+              <button
+                className="block w-full text-left px-4 py-2 hover:bg-gray-100"
+                onClick={() => {
+                  const closestLine = findClosestLine(getMousePosition({
+                    clientX: contextMenu.x,
+                    clientY: contextMenu.y
+                  } as React.MouseEvent<HTMLCanvasElement>));
+                  
+                  if (closestLine) {
+                    handleAddPointOnLine(closestLine.roomId, closestLine.wallIndex, closestLine.point);
+                  }
+                }}
+              >
+                Add Point
+              </button>
+            </div>
+          )}
+        </ContextMenu>
+      )}
+
+        
       </div>
+      
 
       {activeRoom && (
         <div className="bg-white rounded-lg shadow-lg p-4">
