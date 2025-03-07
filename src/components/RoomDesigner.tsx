@@ -14,6 +14,7 @@ interface Room {
   windows: Window[];
   isComplete: boolean;
   isMain: boolean;
+  noClosingWall?: boolean; // New property to indicate no closing wall should be drawn
 }
 
 interface Point {
@@ -1912,119 +1913,156 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
  
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-  if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
-
-  const canvas = canvasRef.current;
-  if (!canvas) return;
-
-  let mousePos = getMousePosition(e);
-
-  // For secondary rooms, implement snapping to main room points or lines
-  if (!activeRoom.isMain) {
-    // Check if we should snap to an existing vertex first
-    const nearestPoint = findNearestPoint(mousePos, activeRoom.id);
-    if (nearestPoint) {
-      // Snap to the nearest point
-      mousePos = { 
-        x: nearestPoint.point.x, 
-        y: nearestPoint.point.y,
-        roomId: nearestPoint.roomId // maintain reference to the original room
-      };
-    } else {
-      // If no point to snap to, try to snap to a line
-      const closestLine = findClosestLine(mousePos, activeRoom.id);
-      if (closestLine) {
-        // Snap to the closest point on the line
-        mousePos = {
-          x: closestLine.point.x,
-          y: closestLine.point.y,
-          attachedTo: {
-            roomId: closestLine.roomId,
-            wallIndex: closestLine.wallIndex,
-            t: closestLine.t // Parametric position on the wall (0-1)
-          }
+    if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
+  
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+  
+    let mousePos = getMousePosition(e);
+  
+    // For secondary rooms, implement snapping to main room points or lines
+    if (!activeRoom.isMain) {
+      // Check if we should snap to an existing vertex first
+      const nearestPoint = findNearestPoint(mousePos, activeRoom.id);
+      if (nearestPoint) {
+        // Snap to the nearest point
+        mousePos = { 
+          x: nearestPoint.point.x, 
+          y: nearestPoint.point.y,
+          roomId: nearestPoint.roomId // maintain reference to the original room
         };
+      } else {
+        // If no point to snap to, try to snap to a line
+        const closestLine = findClosestLine(mousePos, activeRoom.id);
+        if (closestLine) {
+          // Snap to the closest point on the line
+          mousePos = {
+            x: closestLine.point.x,
+            y: closestLine.point.y,
+            attachedTo: {
+              roomId: closestLine.roomId,
+              wallIndex: closestLine.wallIndex,
+              t: closestLine.t // Parametric position on the wall (0-1)
+            }
+          };
+        }
       }
     }
-  }
-
-  if (activeRoom.points.length === 0) {
-    if (activeRoom.isMain) {
-      setRooms(rooms.map(room => 
-        room.id === activeRoom.id 
-          ? { ...room, points: [{ x: 0, y: 0 }] }
-          : room
-      ));
-      
-      const rect = canvas.getBoundingClientRect();
-      const screenX = e.clientX - rect.left;
-      const screenY = e.clientY - rect.top;
-      setPan({ 
-        x: screenX, 
-        y: canvas.height - screenY
+  
+    if (activeRoom.points.length === 0) {
+      if (activeRoom.isMain) {
+        setRooms(rooms.map(room => 
+          room.id === activeRoom.id 
+            ? { ...room, points: [{ x: 0, y: 0 }] }
+            : room
+        ));
+        
+        const rect = canvas.getBoundingClientRect();
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
+        setPan({ 
+          x: screenX, 
+          y: canvas.height - screenY
+        });
+      } else {
+        const wallPoint = findClosestLine(mousePos);
+        if (!wallPoint) {
+          alert('Secondary room must start from an existing wall');
+          return;
+        }
+        
+        setRooms(rooms.map(room => 
+          room.id === activeRoom.id 
+            ? { ...room, points: [mousePos] }
+            : room
+        ));
+      }
+      return;
+    }
+  
+    // Check for room completion
+    if (activeRoom.points.length > 2) {
+      const firstPoint = activeRoom.points[0];
+      const distance = Math.sqrt(
+        Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
+      );
+  
+      console.log("Trying to complete room", {
+        distance,
+        threshold: SNAP_DISTANCE / scale,
+        firstPoint,
+        mousePos
       });
-    } else {
-      const wallPoint = findClosestLine(mousePos);
-      if (!wallPoint) {
-        alert('Secondary room must start from an existing wall');
+  
+      // For main room or conventional completion (clicking near first point)
+      if (distance < SNAP_DISTANCE / scale) {
+        console.log("Closing room - conditions met");
+        
+        // Use a function to update room state directly to avoid race conditions
+        const completeRoom = () => {
+          setRooms(prevRooms => {
+            const newRooms = prevRooms.map(room => 
+              room.id === activeRoom.id 
+                ? { ...room, isComplete: true }
+                : room
+            );
+            console.log("Room marked as complete", newRooms);
+            return newRooms;
+          });
+        };
+        
+        completeRoom();
+        setIsAddingSecondaryRoom(false);
+        
+        // Don't call updateAttachedPoints immediately after completing the room
+        // Let the room completion take effect first
         return;
       }
       
-      setRooms(rooms.map(room => 
-        room.id === activeRoom.id 
-          ? { ...room, points: [mousePos] }
-          : room
-      ));
+      // For secondary rooms - check if first and last points are on the same wall
+      if (!activeRoom.isMain && activeRoom.points.length >= 3) {
+        const firstPoint = activeRoom.points[0];
+        
+        // Check if both first and current points are attached to walls
+        if (firstPoint.attachedTo && mousePos.attachedTo) {
+          // Check if they're attached to the same wall
+          if (firstPoint.attachedTo.roomId === mousePos.attachedTo.roomId && 
+              firstPoint.attachedTo.wallIndex === mousePos.attachedTo.wallIndex) {
+            
+            console.log("Closing secondary room - first and last points on same wall");
+            
+            // Add the new point at the user's clicked position on the wall
+            setRooms(prevRooms => {
+              return prevRooms.map(room => 
+                room.id === activeRoom.id 
+                  ? { 
+                      ...room, 
+                      // Add the last point (snapped to the wall at user's clicked position)
+                      points: [...room.points, mousePos],
+                      // Mark the room as complete
+                      isComplete: true,
+                      // Set the flag to indicate no closing wall
+                      noClosingWall: true
+                    }
+                  : room
+              );
+            });
+            
+            setIsAddingSecondaryRoom(false);
+            return;
+          }
+        }
+      }
     }
-    return;
-  }
-
-  if (activeRoom.points.length > 2) {
-    const firstPoint = activeRoom.points[0];
-    const distance = Math.sqrt(
-      Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
-    );
-
-    console.log("Trying to complete room", {
-      distance,
-      threshold: SNAP_DISTANCE / scale,
-      firstPoint,
-      mousePos
-    });
-
-    if (distance < SNAP_DISTANCE / scale) {
-      console.log("Closing room - conditions met");
-      
-      // Use a function to update room state directly to avoid race conditions
-      const completeRoom = () => {
-        setRooms(prevRooms => {
-          const newRooms = prevRooms.map(room => 
-            room.id === activeRoom.id 
-              ? { ...room, isComplete: true }
-              : room
-          );
-          console.log("Room marked as complete", newRooms);
-          return newRooms;
-        });
-      };
-      
-      completeRoom();
-      setIsAddingSecondaryRoom(false);
-      
-      // Don't call updateAttachedPoints immediately after completing the room
-      // Let the room completion take effect first
-      return;
-    }
-  }
-
-  // If we're here, we're adding a new point to the room
-  console.log("Adding new point to room", mousePos);
-  setRooms(rooms.map(room => 
-    room.id === activeRoom.id 
-      ? { ...room, points: [...room.points, mousePos] }
-      : room
-  ));
-};
+  
+    // If we're here, we're adding a new point to the room
+    console.log("Adding new point to room", mousePos);
+    setRooms(rooms.map(room => 
+      room.id === activeRoom.id 
+        ? { ...room, points: [...room.points, mousePos] }
+        : room
+    ));
+  };
 
 const updateAttachedPoints = () => {
   // Create a deep copy to avoid direct mutations
@@ -2443,7 +2481,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
+  
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw grid
@@ -2484,14 +2522,15 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           }
         });
         
-        if (room.isComplete) {
+        // Only close the path if the room is complete and doesn't have the noClosingWall flag
+        if (room.isComplete && !room.noClosingWall) {
           ctx.closePath();
         }
         
         ctx.strokeStyle = room.id === activeRoomId ? '#2563eb' : '#888888';
         ctx.lineWidth = 2;
         ctx.stroke();
-
+  
         // Draw points
         room.points.forEach((point, index) => {
           const screenPoint = worldToScreen(point.x, point.y);
@@ -2502,7 +2541,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             ? '#dc2626' 
             : '#888888';
           ctx.fill();
-
+  
           ctx.font = '12px Arial';
           ctx.fillStyle = '#000';
           ctx.textAlign = 'left';
@@ -2517,7 +2556,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           
           ctx.fillText(`(${Math.round(point.x)}, ${Math.round(point.y)})`, labelX, labelY);
         });
-
+  
         // Draw doors
         room.doors.forEach((door, index) => {
           const startScreen = worldToScreen(door.startPoint.x, door.startPoint.y);
@@ -2557,7 +2596,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           ctx.textBaseline = 'middle';
           ctx.fillText(`${Math.round(door.width)}mm`, midX, midY - 15);
         });
-
+  
         // Draw windows
         room.windows.forEach((window, index) => {
           const startScreen = worldToScreen(window.startPoint.x, window.startPoint.y);
