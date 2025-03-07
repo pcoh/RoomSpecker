@@ -104,6 +104,7 @@ const RoomDesigner: React.FC = () => {
   const [windowHeight, setWindowHeight] = useState<number>(DEFAULT_WINDOW_HEIGHT);
   const [windowSillHeight, setWindowSillHeight] = useState<number>(DEFAULT_WINDOW_SILL_HEIGHT);
   const lastDraggedPointRef = useRef<{roomId: string, index: number} | null>(null);
+  const [forceUpdateTimestamp, setForceUpdateTimestamp] = useState(0);
 
   
   
@@ -183,6 +184,15 @@ const RoomDesigner: React.FC = () => {
       }, 200);
     }
   }, [isDragging, rooms]);
+
+  useEffect(() => {
+    console.log("Rooms state changed");
+    // Only run if we're not currently dragging
+    if (!isDragging) {
+      console.log("Force updating secondary rooms");
+      handleForceUpdateSecondaryRooms();
+    }
+  }, [rooms]);
   
 
 
@@ -295,21 +305,6 @@ const RoomDesigner: React.FC = () => {
   const mainRoom = useMemo(() => {
     return rooms.find(room => room.isMain);
   }, [rooms]);
-
-  // const findNearestPoint = (mousePos: Point): {roomId: string, index: number} | null => {
-  //   for (const room of rooms) {
-  //     for (let i = 0; i < room.points.length; i++) {
-  //       const point = room.points[i];
-  //       const distance = Math.sqrt(
-  //         Math.pow(mousePos.x - point.x, 2) + Math.pow(mousePos.y - point.y, 2)
-  //       );
-  //       if (distance < POINT_RADIUS * 2 / scale) {
-  //         return { roomId: room.id, index: i };
-  //       }
-  //     }
-  //   }
-  //   return null;
-  // };
 
   const findNearestPoint = (mousePos: Point, roomToExclude?: string): {roomId: string, index: number, point: Point} | null => {
     let closestDist = Infinity;
@@ -808,6 +803,74 @@ const RoomDesigner: React.FC = () => {
     
     // After updating any point, update attached points from other rooms
     setTimeout(updateAttachedPoints, 0);
+  };
+
+  const handleForceUpdateSecondaryRooms = () => {
+    console.log("Starting force update of secondary rooms");
+    
+    // First, create a deep copy of rooms
+    const updatedRooms = JSON.parse(JSON.stringify(rooms));
+    let roomsUpdated = false;
+    
+    // Step 1: Update attached points
+    for (const room of updatedRooms) {
+      // Skip processing the main room
+      if (room.isMain) continue;
+      
+      let roomChanged = false;
+      const originalPoints = JSON.parse(JSON.stringify(room.points));
+      
+      // Update all attached points in this room
+      for (let i = 0; i < room.points.length; i++) {
+        const point = room.points[i];
+        
+        if (point.attachedTo) {
+          // Find the parent room
+          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+          if (!parentRoom) continue;
+          
+          // Get the wall points
+          const wallIndex = point.attachedTo.wallIndex;
+          if (wallIndex >= parentRoom.points.length) continue;
+          
+          const wallStart = parentRoom.points[wallIndex];
+          const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
+          
+          // Calculate the new position
+          const t = point.attachedTo.t;
+          const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+          const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+          
+          // Update the point if needed
+          if (Math.abs(point.x - newX) > 0.001 || Math.abs(point.y - newY) > 0.001) {
+            point.x = newX;
+            point.y = newY;
+            roomChanged = true;
+            roomsUpdated = true;
+            console.log(`Updated point in room ${room.id}, x=${newX}, y=${newY}`);
+          }
+        }
+      }
+      
+      // Step 2: Update doors and windows if points changed
+      if (roomChanged && room.isComplete) {
+        if (room.doors.length > 0 || room.windows.length > 0) {
+          const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, originalPoints);
+          room.doors = doors;
+          room.windows = windows;
+          console.log(`Updated doors/windows in room ${room.id}`);
+        }
+      }
+    }
+    
+    // Only update state if changes were made
+    if (roomsUpdated) {
+      console.log("Applying secondary room updates");
+      setRooms(updatedRooms);
+      setForceUpdateTimestamp(Date.now()); // Trigger another component update
+    } else {
+      console.log("No secondary room updates needed");
+    }
   };
 
 
@@ -1923,60 +1986,22 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
   ));
 };
 
-// const updateAttachedPoints = () => {
-//   // Skip this function if we're currently dragging a point
-//   if (isDragging) return;
-  
-//   // Create a deep copy of rooms to avoid direct mutations
-//   const updatedRooms = JSON.parse(JSON.stringify(rooms));
-  
-//   // First identify all rooms with attached points
-//   for (let i = 0; i < updatedRooms.length; i++) {
-//     const room = updatedRooms[i];
-    
-//     for (let j = 0; j < room.points.length; j++) {
-//       const point = room.points[j];
-      
-//       if (point.attachedTo) {
-//         // Find the parent room that this point is attached to
-//         const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
-        
-//         if (parentRoom && parentRoom.points.length > point.attachedTo.wallIndex) {
-//           // Get the wall points from the parent room
-//           const wallStartIndex = point.attachedTo.wallIndex;
-//           const wallEndIndex = (wallStartIndex + 1) % parentRoom.points.length;
-          
-//           const wallStart = parentRoom.points[wallStartIndex];
-//           const wallEnd = parentRoom.points[wallEndIndex];
-          
-//           // Calculate the new position based on the parametric t value
-//           // Use the existing t value - DON'T RESET IT
-//           const t = point.attachedTo.t;
-//           const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
-//           const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
-          
-//           // Update the point's position
-//           point.x = newX;
-//           point.y = newY;
-//         }
-//       }
-//     }
-//   }
-  
-//   // Update state with the modified rooms
-//   setRooms(updatedRooms);
-// };
 const updateAttachedPoints = () => {
-  // Create a new array to avoid direct mutations
-  const updatedRooms = [...rooms];
+  // Create a deep copy to avoid direct mutations
+  const updatedRooms = JSON.parse(JSON.stringify(rooms));
   let needsUpdate = false;
+  let changedRoomPoints = new Map(); // Track which rooms have point changes
   
-  // Check each room for points that are attached to walls
+  // STEP 1: Update all attached points in secondary rooms
   for (let i = 0; i < updatedRooms.length; i++) {
     const room = updatedRooms[i];
     
     // Skip the active room that's being dragged (its points are already being updated)
     if (selectedPoint && room.id === selectedPoint.roomId) continue;
+    
+    // Store original points before any changes
+    const originalPoints = JSON.parse(JSON.stringify(room.points));
+    let roomChanged = false;
     
     for (let j = 0; j < room.points.length; j++) {
       const point = room.points[j];
@@ -2002,16 +2027,49 @@ const updateAttachedPoints = () => {
           if (point.x !== newX || point.y !== newY) {
             point.x = newX;
             point.y = newY;
+            roomChanged = true;
             needsUpdate = true;
           }
         }
+      }
+    }
+    
+    // If any point in this room changed, store it for door/window updates
+    if (roomChanged) {
+      changedRoomPoints.set(room.id, originalPoints);
+    }
+  }
+  
+  // STEP 2: Update doors and windows for all rooms that had point changes
+  for (let i = 0; i < updatedRooms.length; i++) {
+    const room = updatedRooms[i];
+    
+    // Check if this room's points changed and it has doors/windows to update
+    if (room.isComplete && (room.doors.length > 0 || room.windows.length > 0)) {
+      // If this room had direct point changes
+      if (changedRoomPoints.has(room.id)) {
+        const oldPoints = changedRoomPoints.get(room.id);
+        const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, oldPoints);
+        updatedRooms[i].doors = doors;
+        updatedRooms[i].windows = windows;
+        needsUpdate = true;
+      } 
+      // Check if room points might have moved due to other changes
+      else {
+        // Create a new deep copy of doors/windows in case they needed updating
+        // This handles cases where the room's points didn't change directly
+        // but its doors/windows need to be repositioned due to changes in other rooms
+        const oldPoints = JSON.parse(JSON.stringify(room.points));
+        const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, oldPoints);
+        updatedRooms[i].doors = doors;
+        updatedRooms[i].windows = windows;
       }
     }
   }
   
   // Only update state if something changed
   if (needsUpdate) {
-    setRooms([...updatedRooms]); // Create a new array to trigger a re-render
+    setRooms(updatedRooms);
   }
 };
 
@@ -2105,8 +2163,12 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const key = `${roomId}-${index}`;
     const newAngle = Number(editingAngles[key]);
     if (!isNaN(newAngle)) {
-      // Use our updateAngle function directly
+      console.log(`Updating angle at ${roomId}, index ${index}, angle=${newAngle}`);
       updateAngle(roomId, index, newAngle);
+      
+      // Force an immediate update of secondary rooms
+      console.log("Forcing secondary room update after angle change");
+      setTimeout(handleForceUpdateSecondaryRooms, 50);
     }
     
     // Clear the editing state
@@ -2123,8 +2185,12 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const key = `${roomId}-${index}`;
     const newLength = Number(editingWallLengths[key]);
     if (!isNaN(newLength) && newLength > 0) {
-      // Use our updateWallLength function directly
+      console.log(`Updating wall length at ${roomId}, index ${index}, length=${newLength}`);
       updateWallLength(roomId, index, newLength);
+      
+      // Force an immediate update of secondary rooms
+      console.log("Forcing secondary room update after wall length change");
+      setTimeout(handleForceUpdateSecondaryRooms, 50);
     }
     
     // Clear the editing state
@@ -2152,8 +2218,12 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       const x = Number(coords.x);
       const y = Number(coords.y);
       if (!isNaN(x) && !isNaN(y)) {
-        // Use our updatePoint function directly
+        console.log(`Updating point at ${roomId}, index ${index}, x=${x}, y=${y}`);
         updatePoint(roomId, index, x, y);
+        
+        // Force an immediate update of secondary rooms
+        console.log("Forcing secondary room update after coordinate change");
+        setTimeout(handleForceUpdateSecondaryRooms, 50);
       }
     }
     
