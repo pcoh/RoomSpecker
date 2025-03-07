@@ -805,73 +805,113 @@ const RoomDesigner: React.FC = () => {
     setTimeout(updateAttachedPoints, 0);
   };
 
-  const handleForceUpdateSecondaryRooms = () => {
-    console.log("Starting force update of secondary rooms");
+  // Enhanced function to explicitly handle updating secondary rooms and their doors/windows
+const handleForceUpdateSecondaryRooms = () => {
+  console.log("Starting force update of secondary rooms");
+  
+  // First, create a deep copy of rooms
+  const updatedRooms = JSON.parse(JSON.stringify(rooms));
+  let roomsUpdated = false;
+  
+  // Step 1: Update attached points
+  for (const room of updatedRooms) {
+    // Skip processing the main room
+    if (room.isMain) continue;
     
-    // First, create a deep copy of rooms
-    const updatedRooms = JSON.parse(JSON.stringify(rooms));
-    let roomsUpdated = false;
+    let roomChanged = false;
+    const originalPoints = JSON.parse(JSON.stringify(room.points));
     
-    // Step 1: Update attached points
-    for (const room of updatedRooms) {
-      // Skip processing the main room
-      if (room.isMain) continue;
+    // Update all attached points in this room
+    for (let i = 0; i < room.points.length; i++) {
+      const point = room.points[i];
       
-      let roomChanged = false;
-      const originalPoints = JSON.parse(JSON.stringify(room.points));
-      
-      // Update all attached points in this room
-      for (let i = 0; i < room.points.length; i++) {
-        const point = room.points[i];
+      if (point.attachedTo) {
+        // Find the parent room
+        const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+        if (!parentRoom) continue;
         
-        if (point.attachedTo) {
-          // Find the parent room
-          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
-          if (!parentRoom) continue;
-          
-          // Get the wall points
-          const wallIndex = point.attachedTo.wallIndex;
-          if (wallIndex >= parentRoom.points.length) continue;
-          
-          const wallStart = parentRoom.points[wallIndex];
-          const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
-          
-          // Calculate the new position
-          const t = point.attachedTo.t;
-          const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
-          const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
-          
-          // Update the point if needed
-          if (Math.abs(point.x - newX) > 0.001 || Math.abs(point.y - newY) > 0.001) {
-            point.x = newX;
-            point.y = newY;
-            roomChanged = true;
-            roomsUpdated = true;
-            console.log(`Updated point in room ${room.id}, x=${newX}, y=${newY}`);
-          }
+        // Get the wall points
+        const wallIndex = point.attachedTo.wallIndex;
+        if (wallIndex >= parentRoom.points.length) continue;
+        
+        const wallStart = parentRoom.points[wallIndex];
+        const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
+        
+        // Calculate the new position
+        const t = point.attachedTo.t;
+        const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+        const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+        
+        // Update the point if needed
+        if (Math.abs(point.x - newX) > 0.001 || Math.abs(point.y - newY) > 0.001) {
+          point.x = newX;
+          point.y = newY;
+          roomChanged = true;
+          roomsUpdated = true;
+          console.log(`Updated point in room ${room.id}, x=${newX}, y=${newY}`);
         }
       }
-      
-      // Step 2: Update doors and windows if points changed
-      if (roomChanged && room.isComplete) {
-        if (room.doors.length > 0 || room.windows.length > 0) {
-          const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, originalPoints);
+    }
+    
+    // Step 2: Update doors and windows if room is complete
+    if (room.isComplete) {
+      // Update windows and doors even if points didn't change directly
+      // This ensures windows/doors always stay aligned with walls
+      if (room.doors.length > 0 || room.windows.length > 0) {
+        const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, originalPoints);
+        
+        // Check if doors actually changed
+        let doorsChanged = false;
+        if (doors.length !== room.doors.length) {
+          doorsChanged = true;
+        } else {
+          for (let i = 0; i < doors.length; i++) {
+            if (Math.abs(doors[i].startPoint.x - room.doors[i].startPoint.x) > 0.001 ||
+                Math.abs(doors[i].startPoint.y - room.doors[i].startPoint.y) > 0.001 ||
+                Math.abs(doors[i].endPoint.x - room.doors[i].endPoint.x) > 0.001 ||
+                Math.abs(doors[i].endPoint.y - room.doors[i].endPoint.y) > 0.001) {
+              doorsChanged = true;
+              break;
+            }
+          }
+        }
+        
+        // Check if windows actually changed
+        let windowsChanged = false;
+        if (windows.length !== room.windows.length) {
+          windowsChanged = true;
+        } else {
+          for (let i = 0; i < windows.length; i++) {
+            if (Math.abs(windows[i].startPoint.x - room.windows[i].startPoint.x) > 0.001 ||
+                Math.abs(windows[i].startPoint.y - room.windows[i].startPoint.y) > 0.001 ||
+                Math.abs(windows[i].endPoint.x - room.windows[i].endPoint.x) > 0.001 ||
+                Math.abs(windows[i].endPoint.y - room.windows[i].endPoint.y) > 0.001) {
+              windowsChanged = true;
+              break;
+            }
+          }
+        }
+        
+        // Only update if something actually changed
+        if (doorsChanged || windowsChanged) {
           room.doors = doors;
           room.windows = windows;
+          roomsUpdated = true;
           console.log(`Updated doors/windows in room ${room.id}`);
         }
       }
     }
-    
-    // Only update state if changes were made
-    if (roomsUpdated) {
-      console.log("Applying secondary room updates");
-      setRooms(updatedRooms);
-      setForceUpdateTimestamp(Date.now()); // Trigger another component update
-    } else {
-      console.log("No secondary room updates needed");
-    }
-  };
+  }
+  
+  // Only update state if changes were made
+  if (roomsUpdated) {
+    console.log("Applying secondary room updates");
+    setRooms(updatedRooms);
+    setForceUpdateTimestamp(Date.now()); // Trigger another component update
+  } else {
+    console.log("No secondary room updates needed");
+  }
+};
 
 
   const updateWallLength = (roomId: string, index: number, newLength: number) => {
