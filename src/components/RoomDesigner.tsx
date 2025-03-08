@@ -251,12 +251,41 @@ const RoomDesigner: React.FC = () => {
       y: p1.y + t * dy
     };
   };
+
+  const findSharedWallInMainRoom = (secondaryRoom: Room, wallIndex: number): { found: boolean, wallIndex: number } => {
+    const mainRoom = rooms.find(r => r.isMain);
+    if (!mainRoom || !secondaryRoom || secondaryRoom.isMain) {
+      return { found: false, wallIndex: -1 };
+    }
+    
+    const sp1 = secondaryRoom.points[wallIndex];
+    const sp2 = secondaryRoom.points[(wallIndex + 1) % secondaryRoom.points.length];
+    
+    for (let i = 0; i < mainRoom.points.length; i++) {
+      const p1 = mainRoom.points[i];
+      const p2 = mainRoom.points[(i + 1) % mainRoom.points.length];
+      
+      // Check if endpoints match (in either order)
+      const dist1 = Math.sqrt(Math.pow(p1.x - sp1.x, 2) + Math.pow(p1.y - sp1.y, 2));
+      const dist2 = Math.sqrt(Math.pow(p2.x - sp2.x, 2) + Math.pow(p2.y - sp2.y, 2));
+      const dist3 = Math.sqrt(Math.pow(p1.x - sp2.x, 2) + Math.pow(p1.y - sp2.y, 2));
+      const dist4 = Math.sqrt(Math.pow(p2.x - sp1.x, 2) + Math.pow(p2.y - sp1.y, 2));
+      
+      if ((dist1 < SNAP_DISTANCE / scale && dist2 < SNAP_DISTANCE / scale) ||
+          (dist3 < SNAP_DISTANCE / scale && dist4 < SNAP_DISTANCE / scale)) {
+        return { found: true, wallIndex: i };
+      }
+    }
+    
+    return { found: false, wallIndex: -1 };
+  };
   
   
   const findClosestLine = (mousePos: Point, roomToExclude?: string): { roomId: string, wallIndex: number, point: Point, t: number } | null => {
     let closestDist = Infinity;
     let result: { roomId: string, wallIndex: number, point: Point, t: number } | null = null;
-  
+    
+    // First find the closest wall across all rooms
     for (const room of rooms) {
       if (!room.isComplete || room.points.length < 2 || room.id === roomToExclude) continue;
   
@@ -296,10 +325,126 @@ const RoomDesigner: React.FC = () => {
       }
     }
   
-    if (closestDist < SNAP_DISTANCE / scale && result) {
-      return result;
+    // If we didn't find a close enough wall or no result
+    if (closestDist >= SNAP_DISTANCE / scale || !result) {
+      return null;
     }
+    
+    // Now, check if this wall is shared with the main room
+    const mainRoom = rooms.find(r => r.isMain);
+    const selectedRoom = rooms.find(r => r.id === result.roomId);
+    
+    if (mainRoom && selectedRoom && !selectedRoom.isMain) {
+      for (let i = 0; i < mainRoom.points.length; i++) {
+        const p1 = mainRoom.points[i];
+        const p2 = mainRoom.points[(i + 1) % mainRoom.points.length];
+        
+        const sp1 = selectedRoom.points[result.wallIndex];
+        const sp2 = selectedRoom.points[(result.wallIndex + 1) % selectedRoom.points.length];
+        
+        // Check if these walls are close enough to be considered the same (in either direction)
+        const dist1 = Math.sqrt(Math.pow(p1.x - sp1.x, 2) + Math.pow(p1.y - sp1.y, 2));
+        const dist2 = Math.sqrt(Math.pow(p2.x - sp2.x, 2) + Math.pow(p2.y - sp2.y, 2));
+        const dist3 = Math.sqrt(Math.pow(p1.x - sp2.x, 2) + Math.pow(p1.y - sp2.y, 2));
+        const dist4 = Math.sqrt(Math.pow(p2.x - sp1.x, 2) + Math.pow(p2.y - sp1.y, 2));
+        
+        const isShared = (dist1 < SNAP_DISTANCE / scale && dist2 < SNAP_DISTANCE / scale) || 
+                        (dist3 < SNAP_DISTANCE / scale && dist4 < SNAP_DISTANCE / scale);
+        
+        if (isShared) {
+          // If this is a shared wall, recalculate the point on the main room's wall
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const len2 = dx * dx + dy * dy;
+          
+          if (len2 > 0) {
+            const t = Math.max(0, Math.min(1, (
+              (result.point.x - p1.x) * dx + (result.point.y - p1.y) * dy
+            ) / len2));
   
+            const pointOnLine = {
+              x: p1.x + t * dx,
+              y: p1.y + t * dy
+            };
+            
+            // Return the main room's wall
+            return {
+              roomId: mainRoom.id,
+              wallIndex: i,
+              point: pointOnLine,
+              t
+            };
+          }
+        }
+      }
+    }
+    
+    // If no shared wall with main room is found, return the original result
+    return result;
+  };
+
+  const isSharedWall = (room1: Room, wallIndex1: number, room2: Room, wallIndex2: number): boolean => {
+    if (!room1 || !room2) return false;
+    
+    const p1 = room1.points[wallIndex1];
+    const p2 = room1.points[(wallIndex1 + 1) % room1.points.length];
+    
+    const sp1 = room2.points[wallIndex2];
+    const sp2 = room2.points[(wallIndex2 + 1) % room2.points.length];
+    
+    // Calculate distances between endpoints
+    const dist1 = Math.sqrt(Math.pow(p1.x - sp1.x, 2) + Math.pow(p1.y - sp1.y, 2));
+    const dist2 = Math.sqrt(Math.pow(p2.x - sp2.x, 2) + Math.pow(p2.y - sp2.y, 2));
+    const dist3 = Math.sqrt(Math.pow(p1.x - sp2.x, 2) + Math.pow(p1.y - sp2.y, 2));
+    const dist4 = Math.sqrt(Math.pow(p2.x - sp1.x, 2) + Math.pow(p2.y - sp1.y, 2));
+    
+    // Wall is shared if endpoints match in either direction
+    return (dist1 < SNAP_DISTANCE / scale && dist2 < SNAP_DISTANCE / scale) || 
+           (dist3 < SNAP_DISTANCE / scale && dist4 < SNAP_DISTANCE / scale);
+  };
+
+  const findWallOwner = (roomId: string, wallIndex: number): { roomId: string, wallIndex: number, startPoint: Point, endPoint: Point } => {
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) return { roomId, wallIndex, startPoint: { x: 0, y: 0 }, endPoint: { x: 0, y: 0 } };
+    
+    const mainRoom = rooms.find(r => r.isMain);
+    
+    // If this is already the main room or there is no main room, return as is
+    if (room.isMain || !mainRoom) {
+      const p1 = room.points[wallIndex];
+      const p2 = room.points[(wallIndex + 1) % room.points.length];
+      return { roomId, wallIndex, startPoint: p1, endPoint: p2 };
+    }
+    
+    // Check if this wall is shared with the main room
+    for (let i = 0; i < mainRoom.points.length; i++) {
+      if (isSharedWall(mainRoom, i, room, wallIndex)) {
+        // Found a shared wall - return the main room's wall
+        const p1 = mainRoom.points[i];
+        const p2 = mainRoom.points[(i + 1) % mainRoom.points.length];
+        return { roomId: mainRoom.id, wallIndex: i, startPoint: p1, endPoint: p2 };
+      }
+    }
+    
+    // If not shared, return the original room's wall
+    const p1 = room.points[wallIndex];
+    const p2 = room.points[(wallIndex + 1) % room.points.length];
+    return { roomId, wallIndex, startPoint: p1, endPoint: p2 };
+  };
+  
+  const findCorrespondingWallInMainRoom = (secondaryRoom: Room, wallIndex: number): { roomId: string, wallIndex: number } | null => {
+    const mainRoom = rooms.find(r => r.isMain);
+    if (!mainRoom) return null;
+    
+    for (let i = 0; i < mainRoom.points.length; i++) {
+      if (isSharedWall(mainRoom, i, secondaryRoom, wallIndex)) {
+        return {
+          roomId: mainRoom.id,
+          wallIndex: i
+        };
+      }
+    }
+    
     return null;
   };
 
@@ -411,11 +556,45 @@ const RoomDesigner: React.FC = () => {
   };
 
   const addDoor = (roomId: string, wallIndex: number, startPoint: Point, endPoint: Point) => {
-    const room = rooms.find(r => r.id === roomId);
+    // Determine the correct room and wall to associate the door with
+    const wallOwnerInfo = findWallOwner(roomId, wallIndex);
+    
+    // If the wall owner isn't the original room, we need to project the door points
+    if (wallOwnerInfo.roomId !== roomId || wallOwnerInfo.wallIndex !== wallIndex) {
+      // Recalculate points on the owner's wall
+      const dx = wallOwnerInfo.endPoint.x - wallOwnerInfo.startPoint.x;
+      const dy = wallOwnerInfo.endPoint.y - wallOwnerInfo.startPoint.y;
+      const len2 = dx * dx + dy * dy;
+      
+      if (len2 > 0) {
+        // Find equivalent positions on owner's wall
+        const startT = Math.max(0, Math.min(1, (
+          (startPoint.x - wallOwnerInfo.startPoint.x) * dx + 
+          (startPoint.y - wallOwnerInfo.startPoint.y) * dy
+        ) / len2));
+        
+        const endT = Math.max(0, Math.min(1, (
+          (endPoint.x - wallOwnerInfo.startPoint.x) * dx + 
+          (endPoint.y - wallOwnerInfo.startPoint.y) * dy
+        ) / len2));
+        
+        startPoint = {
+          x: wallOwnerInfo.startPoint.x + startT * dx,
+          y: wallOwnerInfo.startPoint.y + startT * dy
+        };
+        
+        endPoint = {
+          x: wallOwnerInfo.startPoint.x + endT * dx,
+          y: wallOwnerInfo.startPoint.y + endT * dy
+        };
+      }
+    }
+    
+    const room = rooms.find(r => r.id === wallOwnerInfo.roomId);
     if (!room) return;
-
-    const p1 = room.points[wallIndex];
-    const p2 = room.points[(wallIndex + 1) % room.points.length];
+    
+    const p1 = room.points[wallOwnerInfo.wallIndex];
+    const p2 = room.points[(wallOwnerInfo.wallIndex + 1) % room.points.length];
     
     const width = Math.sqrt(
       Math.pow(endPoint.x - startPoint.x, 2) + 
@@ -428,7 +607,7 @@ const RoomDesigner: React.FC = () => {
     );
     
     const newDoor: Door = {
-      wallIndex,
+      wallIndex: wallOwnerInfo.wallIndex,
       startPoint,
       endPoint,
       width,
@@ -436,18 +615,52 @@ const RoomDesigner: React.FC = () => {
     };
     
     setRooms(rooms.map(r => 
-      r.id === roomId 
+      r.id === wallOwnerInfo.roomId 
         ? { ...r, doors: [...r.doors, newDoor] }
         : r
     ));
   };
 
   const addWindow = (roomId: string, wallIndex: number, startPoint: Point, endPoint: Point) => {
-    const room = rooms.find(r => r.id === roomId);
+    // Determine the correct room and wall to associate the window with
+    const wallOwnerInfo = findWallOwner(roomId, wallIndex);
+    
+    // If the wall owner isn't the original room, we need to project the window points
+    if (wallOwnerInfo.roomId !== roomId || wallOwnerInfo.wallIndex !== wallIndex) {
+      // Recalculate points on the owner's wall
+      const dx = wallOwnerInfo.endPoint.x - wallOwnerInfo.startPoint.x;
+      const dy = wallOwnerInfo.endPoint.y - wallOwnerInfo.startPoint.y;
+      const len2 = dx * dx + dy * dy;
+      
+      if (len2 > 0) {
+        // Find equivalent positions on owner's wall
+        const startT = Math.max(0, Math.min(1, (
+          (startPoint.x - wallOwnerInfo.startPoint.x) * dx + 
+          (startPoint.y - wallOwnerInfo.startPoint.y) * dy
+        ) / len2));
+        
+        const endT = Math.max(0, Math.min(1, (
+          (endPoint.x - wallOwnerInfo.startPoint.x) * dx + 
+          (endPoint.y - wallOwnerInfo.startPoint.y) * dy
+        ) / len2));
+        
+        startPoint = {
+          x: wallOwnerInfo.startPoint.x + startT * dx,
+          y: wallOwnerInfo.startPoint.y + startT * dy
+        };
+        
+        endPoint = {
+          x: wallOwnerInfo.startPoint.x + endT * dx,
+          y: wallOwnerInfo.startPoint.y + endT * dy
+        };
+      }
+    }
+    
+    const room = rooms.find(r => r.id === wallOwnerInfo.roomId);
     if (!room) return;
-
-    const p1 = room.points[wallIndex];
-    const p2 = room.points[(wallIndex + 1) % room.points.length];
+    
+    const p1 = room.points[wallOwnerInfo.wallIndex];
+    const p2 = room.points[(wallOwnerInfo.wallIndex + 1) % room.points.length];
     
     const width = Math.sqrt(
       Math.pow(endPoint.x - startPoint.x, 2) + 
@@ -460,7 +673,7 @@ const RoomDesigner: React.FC = () => {
     );
     
     const newWindow: Window = {
-      wallIndex,
+      wallIndex: wallOwnerInfo.wallIndex,
       startPoint,
       endPoint,
       width,
@@ -470,7 +683,7 @@ const RoomDesigner: React.FC = () => {
     };
     
     setRooms(rooms.map(r => 
-      r.id === roomId 
+      r.id === wallOwnerInfo.roomId 
         ? { ...r, windows: [...r.windows, newWindow] }
         : r
     ));
@@ -1306,61 +1519,135 @@ const handleForceUpdateSecondaryRooms = () => {
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!activeRoom) return;
-
+  
     const mousePos = getMousePosition(e);
     
     if (addingDoor) {
       const closestLine = findClosestLine(mousePos);
       if (closestLine) {
+        let targetRoomId = closestLine.roomId;
+        let targetWallIndex = closestLine.wallIndex;
+        let targetPoint = closestLine.point;
+        
+        // Check if this is a secondary room wall shared with main room
+        const room = rooms.find(r => r.id === closestLine.roomId);
+        
+        if (room && !room.isMain) {
+          const sharedWallInfo = findSharedWallInMainRoom(room, closestLine.wallIndex);
+          
+          if (sharedWallInfo.found) {
+            const mainRoom = rooms.find(r => r.isMain);
+            if (mainRoom) {
+              // Recalculate the point on the main room's wall
+              const mainP1 = mainRoom.points[sharedWallInfo.wallIndex];
+              const mainP2 = mainRoom.points[(sharedWallInfo.wallIndex + 1) % mainRoom.points.length];
+              
+              const dx = mainP2.x - mainP1.x;
+              const dy = mainP2.y - mainP1.y;
+              const len2 = dx * dx + dy * dy;
+              
+              if (len2 > 0) {
+                const t = Math.max(0, Math.min(1, (
+                  (closestLine.point.x - mainP1.x) * dx + (closestLine.point.y - mainP1.y) * dy
+                ) / len2));
+                
+                targetRoomId = mainRoom.id;
+                targetWallIndex = sharedWallInfo.wallIndex;
+                targetPoint = {
+                  x: mainP1.x + t * dx,
+                  y: mainP1.y + t * dy
+                };
+              }
+            }
+          }
+        }
+        
         if (!doorStartPoint) {
           setDoorStartPoint({
-            roomId: closestLine.roomId,
-            wallIndex: closestLine.wallIndex,
-            point: closestLine.point
+            roomId: targetRoomId,
+            wallIndex: targetWallIndex,
+            point: targetPoint
           });
-        } else if (doorStartPoint.roomId === closestLine.roomId && 
-                  doorStartPoint.wallIndex === closestLine.wallIndex) {
-          addDoor(doorStartPoint.roomId, doorStartPoint.wallIndex, doorStartPoint.point, closestLine.point);
+        } else if (doorStartPoint.roomId === targetRoomId && 
+                  doorStartPoint.wallIndex === targetWallIndex) {
+          addDoor(doorStartPoint.roomId, doorStartPoint.wallIndex, doorStartPoint.point, targetPoint);
           setAddingDoor(false);
           setDoorStartPoint(null);
         }
       }
       return;
     }
-
+  
     if (addingWindow) {
       const closestLine = findClosestLine(mousePos);
       if (closestLine) {
+        let targetRoomId = closestLine.roomId;
+        let targetWallIndex = closestLine.wallIndex;
+        let targetPoint = closestLine.point;
+        
+        // Check if this is a secondary room wall shared with main room
+        const room = rooms.find(r => r.id === closestLine.roomId);
+        
+        if (room && !room.isMain) {
+          const sharedWallInfo = findSharedWallInMainRoom(room, closestLine.wallIndex);
+          
+          if (sharedWallInfo.found) {
+            const mainRoom = rooms.find(r => r.isMain);
+            if (mainRoom) {
+              // Recalculate the point on the main room's wall
+              const mainP1 = mainRoom.points[sharedWallInfo.wallIndex];
+              const mainP2 = mainRoom.points[(sharedWallInfo.wallIndex + 1) % mainRoom.points.length];
+              
+              const dx = mainP2.x - mainP1.x;
+              const dy = mainP2.y - mainP1.y;
+              const len2 = dx * dx + dy * dy;
+              
+              if (len2 > 0) {
+                const t = Math.max(0, Math.min(1, (
+                  (closestLine.point.x - mainP1.x) * dx + (closestLine.point.y - mainP1.y) * dy
+                ) / len2));
+                
+                targetRoomId = mainRoom.id;
+                targetWallIndex = sharedWallInfo.wallIndex;
+                targetPoint = {
+                  x: mainP1.x + t * dx,
+                  y: mainP1.y + t * dy
+                };
+              }
+            }
+          }
+        }
+        
         if (!windowStartPoint) {
           setWindowStartPoint({
-            roomId: closestLine.roomId,
-            wallIndex: closestLine.wallIndex,
-            point: closestLine.point
+            roomId: targetRoomId,
+            wallIndex: targetWallIndex,
+            point: targetPoint
           });
-        } else if (windowStartPoint.roomId === closestLine.roomId && 
-                  windowStartPoint.wallIndex === closestLine.wallIndex) {
-          addWindow(windowStartPoint.roomId, windowStartPoint.wallIndex, windowStartPoint.point, closestLine.point);
+        } else if (windowStartPoint.roomId === targetRoomId && 
+                  windowStartPoint.wallIndex === targetWallIndex) {
+          addWindow(windowStartPoint.roomId, windowStartPoint.wallIndex, windowStartPoint.point, targetPoint);
           setAddingWindow(false);
           setWindowStartPoint(null);
         }
       }
       return;
     }
-
+  
     const windowPoint = findNearestWindowPoint(mousePos);
     if (windowPoint) {
       setSelectedWindowPoint(windowPoint);
       setIsDragging(true);
       return;
     }
-
+  
     const doorPoint = findNearestDoorPoint(mousePos);
     if (doorPoint) {
       setSelectedDoorPoint(doorPoint);
       setIsDragging(true);
       return;
     }
-
+  
     const pointInfo = findNearestPoint(mousePos);
     if (pointInfo) {
       setSelectedPoint(pointInfo);
