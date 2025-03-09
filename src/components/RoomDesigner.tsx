@@ -3,7 +3,8 @@
 // import ContextMenu from './ContextMenu';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Copy, RotateCcw, DoorOpen, Square, Save } from 'lucide-react';
+// import { Copy, RotateCcw, DoorOpen, Square, Save } from 'lucide-react';
+import { Copy, RotateCcw, DoorOpen, Square, Save, BookmarkPlus } from 'lucide-react';
 import ContextMenu from './ContextMenu';
 
 // Room management interfaces
@@ -65,6 +66,88 @@ interface ContextMenuState {
   };
 }
 
+// Cabinet run interface definition
+interface CabinetRun {
+  id: string;
+  start_pos_x: number; // Position X of the run's reference corner in mm
+  start_pos_y: number; // Position Y of the run's reference corner in mm
+  length: number;      // Length in mm
+  depth: number;       // Depth in mm
+  rotation_z: number;  // Rotation around Z axis in degrees
+  type: 'Base' | 'Upper'; // Run type
+  start_type: 'Open' | 'Wall'; // Start termination type
+  end_type: 'Open' | 'Wall';   // End termination type
+  top_filler: boolean;  // Whether there's a top filler
+  is_island: boolean;   // Whether this is an island run
+  
+  // Optional snap status for visual feedback only
+  snapInfo?: {
+    isSnapped: boolean;
+    snappedEdge?: 'left' | 'right' | 'top' | 'bottom';
+    snappedToWall?: {
+      roomId: string;
+      wallIndex: number;
+    };
+  };
+}
+
+// Type for run drag operations
+interface RunDragInfo {
+  id: string;
+  startX: number;    // X coordinate at start of drag
+  startY: number;    // Y coordinate at start of drag
+  initialRotation: number; // Rotation at start of drag
+}
+
+// Type for run selection
+interface RunSelection {
+  id: string;
+  isResizing: boolean;
+  resizeHandle?: 'length' | 'depth'; // Which dimension is being resized
+}
+
+// Type for run corner points - helps with drawing and hit detection
+interface RunCorners {
+  topLeft: Point;
+  topRight: Point;
+  bottomRight: Point;
+  bottomLeft: Point;
+}
+
+// Run snapping settings
+interface RunSnapSettings {
+  enabled: boolean;
+  threshold: number; // Distance threshold for snapping in mm
+  rotationSnap: number; // Snap rotation to multiples of this value (e.g., 90 for 90-degree increments)
+}
+
+// For handling run editing UI state
+interface RunEditingState {
+  [key: string]: {
+    length?: string;
+    depth?: string;
+    rotation_z?: string;
+    type?: string;
+    start_type?: string;
+    end_type?: string;
+    top_filler?: boolean;
+    is_island?: boolean;
+  }
+}
+
+// For temporary storage during operations like snapping
+interface RunSnapResult {
+  shouldSnap: boolean;
+  newX?: number;
+  newY?: number;
+  newRotation?: number;
+  snapEdge?: 'left' | 'right' | 'top' | 'bottom';
+  snapWall?: {
+    roomId: string;
+    wallIndex: number;
+  };
+}
+
 const POINT_RADIUS = 5;
 const DOOR_POINT_RADIUS = 4;
 const WINDOW_POINT_RADIUS = 4;
@@ -79,7 +162,14 @@ const DEFAULT_WINDOW_HEIGHT = 1200;
 const DEFAULT_WINDOW_SILL_HEIGHT = 900;
 
 const CANVAS_WIDTH_MM = 10000;
-const CANVAS_HEIGHT_MM = 8000;
+const CANVAS_HEIGHT_MM = 6000;
+const CANVAS_WIDTH_px = 1200;
+const CANVAS_HEIGHT_px = 600;
+//Run snapping constants:
+const SNAP_DISTANCE_MM = 50; // Distance in mm to snap to walls
+const SNAP_ANGLE_THRESHOLD = 5; // Degrees threshold for angular snapping
+const SNAP_ROTATION_INCREMENT = 90; // Snap rotation to 90-degree increments
+
 
 const RoomDesigner: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -93,6 +183,7 @@ const RoomDesigner: React.FC = () => {
   const [lastPanPosition, setLastPanPosition] = useState<Point | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // const [scale, setScale] = useState(CANVAS_WIDTH_MM/CANVAS_WIDTH_px);
   const [scale, setScale] = useState(0.08);
   const [editingAngles, setEditingAngles] = useState<{ [key: string]: string }>({});
   const [editingWallLengths, setEditingWallLengths] = useState<{ [key: string]: string }>({});
@@ -106,7 +197,32 @@ const RoomDesigner: React.FC = () => {
   const [windowSillHeight, setWindowSillHeight] = useState<number>(DEFAULT_WINDOW_SILL_HEIGHT);
   const lastDraggedPointRef = useRef<{roomId: string, index: number} | null>(null);
   const [forceUpdateTimestamp, setForceUpdateTimestamp] = useState(0);
-
+  const [cabinetRuns, setCabinetRuns] = useState<CabinetRun[]>([]); // State for cabinet runs
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);  // State for run selection
+  const [draggedRun, setDraggedRun] = useState<RunDragInfo | null>(null); // State for tracking run dragging
+  const [resizingRun, setResizingRun] = useState<{
+    id: string;
+    handle: 'length' | 'depth';
+    startLength?: number;
+    startDepth?: number;
+    startX?: number;
+    startY?: number;
+  } | null>(null); // State for run resize operation
+  const [isAddingRun, setIsAddingRun] = useState<boolean>(false); // State for run creation mode
+  const [newRunType, setNewRunType] = useState<'Base' | 'Upper'>('Base'); // State for temporarily storing run type during creation
+  const [editingRunValues, setEditingRunValues] = useState<RunEditingState>({}); // State for editing run properties in the UI
+  // Run snapping settings
+  const [runSnapSettings, setRunSnapSettings] = useState<RunSnapSettings>({
+    enabled: true,
+    threshold: 50, // 50mm snap threshold
+    rotationSnap: 90  // Snap to 90-degree increments
+  });
+// Default values for new cabinet runs
+const DEFAULT_RUN_LENGTH = 1000; // 1m
+const DEFAULT_RUN_DEPTH = 635;   // 0.635m
+// const DEFAULT_BASE_HEIGHT = 900;     // 0.9m (for visual representation)
+// const DEFAULT_UPPER_HEIGHT = 700;    // 0.7m (for visual representation)
+// const DEFAULT_UPPER_OFFSET = 1500;   // 1.5m from floor (for visual representation)
   
   
 
@@ -125,52 +241,6 @@ const RoomDesigner: React.FC = () => {
       setActiveRoomId('main');
     }
   }, []);
-
-  // useEffect(() => {
-  //   if (!isDragging && lastDraggedPointRef.current) {
-  //     const point = lastDraggedPointRef.current;
-  //     lastDraggedPointRef.current = null;
-      
-  //     // Only call this after dragging has completely finished
-  //     setTimeout(() => {
-  //       updateAttachedPointsAfterDrag(point);
-  //     }, 200);
-  //   }
-  // }, [isDragging]);
-
-  // useEffect(() => {
-  //   if (!isDragging && lastDraggedPointRef.current) {
-  //     lastDraggedPointRef.current = null;
-  //     // We don't need the setTimeout here anymore since we're updating continuously
-  //   }
-  // }, [isDragging]);
-
-  // useEffect(() => {
-  //   if (!isDragging && lastDraggedPointRef.current) {
-  //     const point = lastDraggedPointRef.current;
-  //     const roomId = point.roomId;
-  //     lastDraggedPointRef.current = null;
-      
-  //     // Only call this after dragging has completely finished
-  //     setTimeout(() => {
-  //       // First update attached points
-  //       updateAttachedPointsAfterDrag(point);
-        
-  //       // Then update doors and windows for the dragged room
-  //       const draggedRoom = rooms.find(r => r.id === roomId);
-  //       if (draggedRoom && draggedRoom.isComplete && 
-  //          (draggedRoom.doors.length > 0 || draggedRoom.windows.length > 0)) {
-  //         // We need this old points reference. Since the drag is already completed,
-  //         // we need to use the current points as "new" points
-  //         const oldPoints = [...draggedRoom.points]; 
-  //         updateDoorsAndWindows(roomId, oldPoints, oldPoints);
-  //       }
-        
-  //       // Redraw to ensure everything is properly rendered
-  //       drawRoom();
-  //     }, 200);
-  //   }
-  // }, [isDragging, rooms]);
 
   useEffect(() => {
     if (!isDragging && lastDraggedPointRef.current) {
@@ -1067,7 +1137,6 @@ const handleForceUpdateSecondaryRooms = () => {
       }
     }
     
-    // Step 2: Update doors and windows if room is complete
     if (room.isComplete) {
       // Update windows and doors even if points didn't change directly
       // This ensures windows/doors always stay aligned with walls
@@ -1407,81 +1476,778 @@ const handleForceUpdateSecondaryRooms = () => {
     }));
   };
 
-  const exportRoomData = () => {
-    // Create the export data structure directly from the existing room data
-    const exportData = rooms.map(room => {
-      // Get wall data that's already calculated for the UI
-      const wallData = calculateWallData(room);
-      
+  const distancePointToWall = (point: Point, wallStart: Point, wallEnd: Point): {
+    distance: number;
+    closestPoint: Point;
+    t: number; // parameter along the line (0-1)
+  } => {
+    const dx = wallEnd.x - wallStart.x;
+    const dy = wallEnd.y - wallStart.y;
+    const len2 = dx * dx + dy * dy;
+    
+    if (len2 === 0) {
+      // Wall is a point
       return {
-        id: room.id,
-        isMain: room.isMain,
-        isComplete: room.isComplete,
-        // Group x and y coordinates into separate arrays
-        points: {
-          x: room.points.map(point => Math.round(point.x)),
-          y: room.points.map(point => Math.round(point.y))
-        },
-        // Group wall data with arrays for each property
-        walls: room.isComplete ? {
-          count: room.points.length,
-          from: room.points.map((_, index) => index),
-          to: room.points.map((_, index) => (index + 1) % room.points.length),
-          // lengths: room.points.map((_, index) => Math.round(wallData[index]?.length || 0)),
-          // angles: room.points.map((_, index) => wallData[index]?.angle ? Math.round(wallData[index].angle * 10) / 10 : 0)
-        } : {
-          count: 0,
-          from: [],
-          to: [],
-          // lengths: [],
-          // angles: []
-        },
-        // Group door data with arrays for each property
-        doors: {
-          count: room.doors.length,
-          wallIndices: room.doors.map(door => door.wallIndex),
-          widths: room.doors.map(door => Math.round(door.width)),
-          positions: room.doors.map(door => Math.round(door.position))
-        },
-        // Group window data with arrays for each property
-        windows: {
-          count: room.windows.length,
-          wallIndices: room.windows.map(window => window.wallIndex),
-          widths: room.windows.map(window => Math.round(window.width)),
-          heights: room.windows.map(window => Math.round(window.height)),
-          sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
-          positions: room.windows.map(window => Math.round(window.position))
-        }
+        distance: Math.sqrt((point.x - wallStart.x)**2 + (point.y - wallStart.y)**2),
+        closestPoint: { x: wallStart.x, y: wallStart.y },
+        t: 0
       };
-    });
+    }
+    
+    // Calculate projection parameter t
+    let t = ((point.x - wallStart.x) * dx + (point.y - wallStart.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t)); // Constrain to wall segment
+    
+    // Calculate closest point on wall
+    const closestPoint = {
+      x: wallStart.x + t * dx,
+      y: wallStart.y + t * dy
+    };
+    
+    // Calculate distance
+    const distance = Math.sqrt(
+      (point.x - closestPoint.x)**2 + 
+      (point.y - closestPoint.y)**2
+    );
+    
+    return { distance, closestPoint, t };
+  };
 
-    // Additional metadata
-    const exportObject = {
-      projectData: {
-        rooms: exportData,
-        // canvasDimensions: {
-        //   width: CANVAS_WIDTH_MM,
-        //   height: CANVAS_HEIGHT_MM
-        // },
-        exportDate: new Date().toISOString()
+  const calculateRunCorners = (run: CabinetRun): RunCorners => {
+    const rotationRad = (run.rotation_z * Math.PI) / 180;
+    const cos = Math.cos(rotationRad);
+    const sin = Math.sin(rotationRad);
+    
+    // Corners relative to start position
+    const topLeft = {
+      x: run.start_pos_x,
+      y: run.start_pos_y
+    };
+    
+    const topRight = {
+      x: run.start_pos_x + run.length * cos,
+      y: run.start_pos_y + run.length * sin
+    };
+    
+    const bottomRight = {
+      x: topRight.x - run.depth * sin,
+      y: topRight.y + run.depth * cos
+    };
+    
+    const bottomLeft = {
+      x: topLeft.x - run.depth * sin,
+      y: topLeft.y + run.depth * cos
+    };
+    
+    return { topLeft, topRight, bottomRight, bottomLeft };
+  };
+
+  const calculateRunEdges = (corners: RunCorners): Array<{start: Point, end: Point, type: string}> => {
+    return [
+      { start: corners.topLeft, end: corners.topRight, type: 'front' },
+      { start: corners.topRight, end: corners.bottomRight, type: 'right' },
+      { start: corners.bottomRight, end: corners.bottomLeft, type: 'back' },
+      { start: corners.bottomLeft, end: corners.topLeft, type: 'left' }
+    ];
+  };
+
+  // Calculate the optimal rotation to align with a wall
+const calculateWallAlignment = (
+  wallStart: Point, 
+  wallEnd: Point,
+  runRotation: number
+): number => {
+  // Calculate wall angle in degrees
+  const wallAngle = Math.atan2(
+    wallEnd.y - wallStart.y,
+    wallEnd.x - wallStart.x
+  ) * (180 / Math.PI);
+  
+  // Normalize to 0-360
+  const normalizedWallAngle = (wallAngle + 360) % 360;
+  
+  // Calculate potential alignments (parallel or perpendicular)
+  const parallelAngles = [
+    normalizedWallAngle,
+    (normalizedWallAngle + 180) % 360
+  ];
+  
+  const perpendicularAngles = [
+    (normalizedWallAngle + 90) % 360,
+    (normalizedWallAngle + 270) % 360
+  ];
+  
+  // Combine all potential alignment angles
+  const potentialAngles = [...parallelAngles, ...perpendicularAngles];
+  
+  // Find the closest angle to current rotation
+  let closestAngle = potentialAngles[0];
+  let minDifference = 360;
+  
+  for (const angle of potentialAngles) {
+    // Calculate angle difference (considering the circular nature)
+    let diff = Math.abs(angle - runRotation);
+    if (diff > 180) diff = 360 - diff;
+    
+    if (diff < minDifference) {
+      minDifference = diff;
+      closestAngle = angle;
+    }
+  }
+  
+  // If the difference is within threshold, snap to the closest angle
+  if (minDifference <= SNAP_ANGLE_THRESHOLD) {
+    return closestAngle;
+  }
+  
+  // Otherwise snap to increments of 90 degrees
+  return Math.round(runRotation / SNAP_ROTATION_INCREMENT) * SNAP_ROTATION_INCREMENT;
+};
+  
+  // Check if a point is inside a cabinet run
+  const isPointInRun = (point: Point, run: CabinetRun): boolean => {
+    const corners = calculateRunCorners(run);
+    
+    // Transform the point to local coordinates
+    const rotationRad = (-run.rotation_z * Math.PI) / 180;
+    const cos = Math.cos(rotationRad);
+    const sin = Math.sin(rotationRad);
+    
+    // Translate point to run's coordinate system
+    const translatedX = point.x - run.start_pos_x;
+    const translatedY = point.y - run.start_pos_y;
+    
+    // Rotate point
+    const rotatedX = translatedX * cos - translatedY * sin;
+    const rotatedY = translatedX * sin + translatedY * cos;
+    
+    // Check if point is inside rectangle bounds
+    return (
+      rotatedX >= 0 && 
+      rotatedX <= run.length && 
+      rotatedY >= 0 && 
+      rotatedY <= run.depth
+    );
+  };
+  
+  // Find the cabinet run at a given position
+  const findRunAtPosition = (position: Point): string | null => {
+    for (const run of cabinetRuns) {
+      if (isPointInRun(position, run)) {
+        return run.id;
+      }
+    }
+    return null;
+  };
+  const pointToLineDistance = (point: Point, lineStart: Point, lineEnd: Point): {
+    distance: number;
+    closestPoint: Point;
+    t: number; // Parameter along the line (0-1)
+  } => {
+    const dx = lineEnd.x - lineStart.x;
+    const dy = lineEnd.y - lineStart.y;
+    const lineLengthSq = dx * dx + dy * dy;
+    
+    if (lineLengthSq === 0) {
+      // Line segment is actually a point
+      return {
+        distance: Math.sqrt((point.x - lineStart.x) ** 2 + (point.y - lineStart.y) ** 2),
+        closestPoint: { x: lineStart.x, y: lineStart.y },
+        t: 0
+      };
+    }
+    
+    // Calculate projection of point onto line
+    const t = Math.max(0, Math.min(1, ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / lineLengthSq));
+    
+    // Calculate closest point on line
+    const closestPoint = {
+      x: lineStart.x + t * dx,
+      y: lineStart.y + t * dy
+    };
+    
+    // Calculate distance
+    const distance = Math.sqrt((point.x - closestPoint.x) ** 2 + (point.y - closestPoint.y) ** 2);
+    
+    return { distance, closestPoint, t };
+  };
+  
+  // Check if a run edge should snap to a wall
+  const checkRunEdgeToWallSnap = (runEdgeStart: Point, runEdgeEnd: Point, room: Room, wallIndex: number): RunSnapResult => {
+    const p1 = room.points[wallIndex];
+    const p2 = room.points[(wallIndex + 1) % room.points.length];
+    
+    // Calculate midpoint of run edge
+    const runEdgeMid = {
+      x: (runEdgeStart.x + runEdgeEnd.x) / 2,
+      y: (runEdgeStart.y + runEdgeEnd.y) / 2
+    };
+    
+    // Get distance from midpoint to wall
+    const { distance, closestPoint, t } = pointToLineDistance(runEdgeMid, p1, p2);
+    
+    // Check if within snapping threshold
+    if (distance <= runSnapSettings.threshold / scale) {
+      // Calculate angle between run edge and wall
+      const runEdgeAngle = Math.atan2(runEdgeEnd.y - runEdgeStart.y, runEdgeEnd.x - runEdgeStart.x);
+      const wallAngle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+      
+      // Normalize angle difference to [-π, π]
+      let angleDiff = (runEdgeAngle - wallAngle) % (2 * Math.PI);
+      if (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+      if (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+      
+      // Check if angles are parallel or perpendicular (within tolerance)
+      const isParallel = Math.abs(angleDiff) < 0.1 || Math.abs(Math.abs(angleDiff) - Math.PI) < 0.1;
+      const isPerpendicular = Math.abs(Math.abs(angleDiff) - Math.PI / 2) < 0.1;
+      
+      if (isParallel || isPerpendicular) {
+        // Calculate new rotation to align with wall
+        let newRotation = 0;
+        
+        if (isParallel) {
+          // Align parallel to wall
+          newRotation = (wallAngle * 180 / Math.PI) % 360;
+          if (newRotation < 0) newRotation += 360;
+        } else {
+          // Align perpendicular to wall
+          newRotation = ((wallAngle + Math.PI / 2) * 180 / Math.PI) % 360;
+          if (newRotation < 0) newRotation += 360;
+        }
+        
+        // Snap rotation to increments if enabled
+        if (runSnapSettings.rotationSnap > 0) {
+          newRotation = Math.round(newRotation / runSnapSettings.rotationSnap) * runSnapSettings.rotationSnap;
+        }
+        
+        return {
+          shouldSnap: true,
+          newRotation: newRotation,
+          snapEdge: isParallel ? 'left' : 'bottom', // This is simplified - would need more logic to determine actual edge
+          snapWall: {
+            roomId: room.id,
+            wallIndex: wallIndex
+          }
+        };
+      }
+    }
+    
+    return { shouldSnap: false };
+  };
+  
+  // Find the best wall to snap a run to
+  const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
+    // Calculate run corners
+    const corners = calculateRunCorners(run);
+    const edges = [
+      { start: corners.topLeft, end: corners.topRight, name: 'top' as const },
+      { start: corners.topRight, end: corners.bottomRight, name: 'right' as const },
+      { start: corners.bottomRight, end: corners.bottomLeft, name: 'bottom' as const },
+      { start: corners.bottomLeft, end: corners.topLeft, name: 'left' as const }
+    ];
+    
+    let bestSnapResult: RunSnapResult = { shouldSnap: false };
+    let minDistance = runSnapSettings.threshold / scale;
+    
+    // Check all rooms and their walls
+    for (const room of rooms) {
+      if (!room.isComplete) continue;
+      
+      for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
+        const p1 = room.points[wallIndex];
+        const p2 = room.points[(wallIndex + 1) % room.points.length];
+        
+        // Check each edge of the run for potential snapping
+        for (const edge of edges) {
+          // Get midpoint of run edge
+          const edgeMid = {
+            x: (edge.start.x + edge.end.x) / 2,
+            y: (edge.start.y + edge.end.y) / 2
+          };
+          
+          // Calculate distance to wall
+          const { distance, closestPoint } = pointToLineDistance(edgeMid, p1, p2);
+          
+          // If this is the closest wall so far and within threshold
+          if (distance < minDistance) {
+            // Calculate more detailed snap information
+            const snapResult = checkRunEdgeToWallSnap(edge.start, edge.end, room, wallIndex);
+            
+            if (snapResult.shouldSnap) {
+              minDistance = distance;
+              bestSnapResult = {
+                ...snapResult,
+                snapEdge: edge.name,
+                // Calculate new position based on the closest point
+                newX: closestPoint.x - (edgeMid.x - run.start_pos_x),
+                newY: closestPoint.y - (edgeMid.y - run.start_pos_y)
+              };
+            }
+          }
+        }
+      }
+    }
+    
+    return bestSnapResult;
+  };
+
+  const findBestWallSnap = (run: CabinetRun): {
+    shouldSnap: boolean;
+    newX?: number;
+    newY?: number;
+    newRotation?: number;
+    snapEdge?: string;
+    snapWall?: {
+      roomId: string;
+      wallIndex: number;
+    };
+    snapDistance?: number;
+  } => {
+    // Don't try to snap if there are no rooms
+    if (!rooms.some(r => r.isComplete)) {
+      return { shouldSnap: false };
+    }
+    
+    // Calculate current corners of the run
+    const corners = calculateRunCorners(run);
+    
+    // Get all edges of the run
+    const edges = calculateRunEdges(corners);
+    
+    // Track the best snap found
+    let bestSnap = {
+      shouldSnap: false,
+      snapDistance: SNAP_DISTANCE_MM / scale,
+      snapEdge: '',
+      snapWall: { roomId: '', wallIndex: -1 },
+      newX: run.start_pos_x,
+      newY: run.start_pos_y,
+      newRotation: run.rotation_z
+    };
+    
+    // Check all completed rooms
+    for (const room of rooms) {
+      if (!room.isComplete || room.points.length < 3) continue;
+      
+      // Check each wall in the room
+      for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
+        const wallStart = room.points[wallIndex];
+        const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+        
+        // Check each edge of the cabinet run against this wall
+        for (const edge of edges) {
+          // Use the midpoint of the edge for initial distance check
+          const edgeMidpoint = {
+            x: (edge.start.x + edge.end.x) / 2,
+            y: (edge.start.y + edge.end.y) / 2
+          };
+          
+          // Calculate distance from edge midpoint to wall
+          const { distance, closestPoint } = distancePointToWall(
+            edgeMidpoint, wallStart, wallEnd
+          );
+          
+          // If this is closer than our current best and within threshold
+          if (distance < bestSnap.snapDistance) {
+            // Calculate an alignment rotation
+            const newRotation = calculateWallAlignment(
+              wallStart, wallEnd, run.rotation_z
+            );
+            
+            // Calculate how much we need to move to snap
+            const dx = closestPoint.x - edgeMidpoint.x;
+            const dy = closestPoint.y - edgeMidpoint.y;
+            
+            // Update best snap
+            bestSnap = {
+              shouldSnap: true,
+              snapDistance: distance,
+              snapEdge: edge.type,
+              snapWall: { roomId: room.id, wallIndex },
+              newX: run.start_pos_x + dx,
+              newY: run.start_pos_y + dy,
+              newRotation
+            };
+          }
+        }
+      }
+    }
+    
+    // Handle corner cases - if we're close to two perpendicular walls
+    if (bestSnap.shouldSnap) {
+      // We can add additional logic here to detect and handle corner cases
+      // This would involve finding a second close wall that's perpendicular
+      // to the best wall we found, and adjusting position accordingly
+      
+      const cornerSnapThreshold = SNAP_DISTANCE_MM * 2 / scale;
+      
+      // Create a temporary run with the new position and rotation
+      const tempRun: CabinetRun = {
+        ...run,
+        start_pos_x: bestSnap.newX!,
+        start_pos_y: bestSnap.newY!,
+        rotation_z: bestSnap.newRotation!
+      };
+      
+      // Calculate new corners after the initial snap
+      const newCorners = calculateRunCorners(tempRun);
+      
+      // Check all corners against all walls
+      for (const cornerKey in newCorners) {
+        const corner = newCorners[cornerKey as keyof RunCorners];
+        
+        // Skip checking against the wall we already snapped to
+        for (const room of rooms) {
+          if (!room.isComplete) continue;
+          
+          for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
+            // Skip the wall we already snapped to
+            if (room.id === bestSnap.snapWall!.roomId && 
+                wallIndex === bestSnap.snapWall!.wallIndex) {
+              continue;
+            }
+            
+            const wallStart = room.points[wallIndex];
+            const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+            
+            // Check if this corner is close to this wall
+            const { distance, closestPoint } = distancePointToWall(
+              corner, wallStart, wallEnd
+            );
+            
+            if (distance < cornerSnapThreshold) {
+              // We found a second wall to snap to - this is a corner case
+              // Calculate the vector from corner to closest point on wall
+              const dx = closestPoint.x - corner.x;
+              const dy = closestPoint.y - corner.y;
+              
+              // Adjust the best snap position to account for this corner snap
+              bestSnap.newX! += dx;
+              bestSnap.newY! += dy;
+              
+              // We only handle one corner snap (first one found)
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    return bestSnap;
+  };
+
+  const applyRunSnap = (
+    runId: string | null, 
+    mousePos: Point, 
+    currentRun?: CabinetRun
+  ): void => {
+    // If no run is provided, create a temporary one at mouse position
+    const tempRun: CabinetRun = currentRun || {
+      id: 'temp',
+      start_pos_x: mousePos.x,
+      start_pos_y: mousePos.y,
+      length: DEFAULT_RUN_LENGTH,
+      depth: DEFAULT_RUN_DEPTH,
+      rotation_z: 0,
+      type: newRunType,
+      start_type: 'Open',
+      end_type: 'Open',
+      top_filler: false,
+      is_island: false
+    };
+    
+    // Find best wall to snap to
+    const snapResult = findBestWallSnap(tempRun);
+    
+    if (snapResult.shouldSnap) {
+      if (runId) {
+        // Update existing run
+        setCabinetRuns(prev => prev.map(run => {
+          if (run.id === runId) {
+            return {
+              ...run,
+              start_pos_x: snapResult.newX!,
+              start_pos_y: snapResult.newY!,
+              rotation_z: snapResult.newRotation!,
+              snapInfo: {
+                isSnapped: true,
+                snappedEdge: snapResult.snapEdge,
+                snappedToWall: snapResult.snapWall
+              }
+            };
+          }
+          return run;
+        }));
+      } else {
+        // Create new run with snap
+        const newRun: CabinetRun = {
+          id: `run-${cabinetRuns.length + 1}`,
+          start_pos_x: snapResult.newX!,
+          start_pos_y: snapResult.newY!,
+          length: DEFAULT_RUN_LENGTH,
+          depth: DEFAULT_RUN_DEPTH,
+          rotation_z: snapResult.newRotation!,
+          type: newRunType,
+          start_type: 'Open',
+          end_type: 'Open',
+          top_filler: false,
+          is_island: false,
+          snapInfo: {
+            isSnapped: true,
+            snappedEdge: snapResult.snapEdge,
+            snappedToWall: snapResult.snapWall
+          }
+        };
+        
+        setCabinetRuns([...cabinetRuns, newRun]);
+        setSelectedRun(newRun.id);
+      }
+    } else {
+      // No snap - just update or create at mouse position
+      if (runId) {
+        setCabinetRuns(prev => prev.map(run => {
+          if (run.id === runId) {
+            return {
+              ...run,
+              start_pos_x: mousePos.x,
+              start_pos_y: mousePos.y,
+              snapInfo: undefined
+            };
+          }
+          return run;
+        }));
+      } else {
+        // Create new run without snap
+        const newRun: CabinetRun = {
+          id: `run-${cabinetRuns.length + 1}`,
+          start_pos_x: mousePos.x,
+          start_pos_y: mousePos.y,
+          length: DEFAULT_RUN_LENGTH,
+          depth: DEFAULT_RUN_DEPTH,
+          rotation_z: 0,
+          type: newRunType,
+          start_type: 'Open',
+          end_type: 'Open',
+          top_filler: false,
+          is_island: false
+        };
+        
+        setCabinetRuns([...cabinetRuns, newRun]);
+        setSelectedRun(newRun.id);
+      }
+    }
+    
+    setIsAddingRun(false);
+  };
+  
+  // Calculate the snap position for a run during placement or dragging
+  const calculateRunSnapPosition = (
+    mousePos: Point, 
+    currentRotation: number, 
+    runLength: number = DEFAULT_RUN_LENGTH, 
+    runDepth: number = DEFAULT_RUN_DEPTH
+  ): RunSnapResult => {
+    // Create a temporary run at the mouse position
+    const tempRun: CabinetRun = {
+      id: 'temp',
+      start_pos_x: mousePos.x,
+      start_pos_y: mousePos.y,
+      length: runLength,
+      depth: runDepth,
+      rotation_z: currentRotation,
+      type: 'Base',
+      start_type: 'Open',
+      end_type: 'Open',
+      top_filler: false,
+      is_island: false
+    };
+    
+    // Find the best wall to snap to
+    return findBestWallSnapForRun(tempRun);
+  };
+
+  // Start adding a new cabinet run
+const startAddingRun = () => {
+  if (!rooms.some(room => room.isMain && room.isComplete)) {
+    alert('Please complete the main room first');
+    return;
+  }
+  
+  setIsAddingRun(true);
+  setNewRunType('Base'); // Default to Base type
+};
+
+// Create a new cabinet run at the specified position
+const createCabinetRun = (position: Point) => {
+  // Check if we should snap to a wall
+  const snapResult = calculateRunSnapPosition(position, 0);
+  
+  // Create new cabinet run
+  const newRun: CabinetRun = {
+    id: `run-${cabinetRuns.length + 1}`,
+    start_pos_x: snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x,
+    start_pos_y: snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y,
+    length: DEFAULT_RUN_LENGTH,
+    depth: DEFAULT_RUN_DEPTH,
+    rotation_z: snapResult.shouldSnap && snapResult.newRotation !== undefined ? snapResult.newRotation : 0,
+    type: newRunType,
+    start_type: 'Open',
+    end_type: 'Open',
+    top_filler: false,
+    is_island: false,
+    snapInfo: snapResult.shouldSnap ? {
+      isSnapped: true,
+      snappedEdge: snapResult.snapEdge,
+      snappedToWall: snapResult.snapWall
+    } : undefined
+  };
+  
+  setCabinetRuns([...cabinetRuns, newRun]);
+  setSelectedRun(newRun.id);
+  setIsAddingRun(false);
+};
+
+// Update a cabinet run property
+const updateRunProperty = (id: string, property: keyof CabinetRun, value: any) => {
+  setCabinetRuns(prevRuns => prevRuns.map(run => 
+    run.id === id 
+      ? { ...run, [property]: value }
+      : run
+  ));
+};
+
+// Delete a cabinet run
+const deleteRun = (id: string) => {
+  setCabinetRuns(prevRuns => prevRuns.filter(run => run.id !== id));
+  if (selectedRun === id) {
+    setSelectedRun(null);
+  }
+};
+
+
+// Function to rotate a cabinet run
+const rotateRun = (id: string, angle: number) => {
+  setCabinetRuns(prevRuns => prevRuns.map(run => {
+    if (run.id !== id) return run;
+    
+    // Add the angle to the current rotation
+    let newRotation = (run.rotation_z + angle) % 360;
+    if (newRotation < 0) newRotation += 360;
+    
+    // Snap to increments if enabled
+    if (runSnapSettings.rotationSnap > 0) {
+      newRotation = Math.round(newRotation / runSnapSettings.rotationSnap) * runSnapSettings.rotationSnap;
+    }
+    
+    return {
+      ...run,
+      rotation_z: newRotation,
+      // Clear snapping info as rotation likely broke the alignment
+      snapInfo: undefined
+    };
+  }));
+};
+
+// Function to toggle run properties
+const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => {
+  setCabinetRuns(prevRuns => prevRuns.map(run => 
+    run.id === id 
+      ? { ...run, [property]: !run[property] }
+      : run
+  ));
+};
+
+const exportRoomData = () => {
+  // Create the export data structure directly from the existing room data
+  const exportData = rooms.map(room => {
+    // Get wall data that's already calculated for the UI
+    const wallData = calculateWallData(room);
+    
+    return {
+      id: room.id,
+      isMain: room.isMain,
+      isComplete: room.isComplete,
+      // Group x and y coordinates into separate arrays
+      points: {
+        x: room.points.map(point => Math.round(point.x)),
+        y: room.points.map(point => Math.round(point.y))
+      },
+      // Group wall data with arrays for each property
+      walls: room.isComplete ? {
+        count: room.points.length,
+        from: room.points.map((_, index) => index),
+        to: room.points.map((_, index) => (index + 1) % room.points.length),
+      } : {
+        count: 0,
+        from: [],
+        to: [],
+      },
+      // Group door data with arrays for each property
+      doors: {
+        count: room.doors.length,
+        wallIndices: room.doors.map(door => door.wallIndex),
+        widths: room.doors.map(door => Math.round(door.width)),
+        positions: room.doors.map(door => Math.round(door.position))
+      },
+      // Group window data with arrays for each property
+      windows: {
+        count: room.windows.length,
+        wallIndices: room.windows.map(window => window.wallIndex),
+        widths: room.windows.map(window => Math.round(window.width)),
+        heights: room.windows.map(window => Math.round(window.height)),
+        sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
+        positions: room.windows.map(window => Math.round(window.position))
       }
     };
+  });
 
-    // Convert to JSON string with 2-space indentation
-    const jsonData = JSON.stringify(exportObject, null, 2);
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(jsonData)
-      .then(() => {
-        alert('Room data copied to clipboard!');
-      })
-      .catch(err => {
-        console.error('Failed to copy data: ', err);
-        alert('Failed to copy data to clipboard. See console for details.');
-      });
+  // Create cabinet run export data
+  const cabinetRunData = cabinetRuns.map(run => {
+    return {
+      id: run.id,
+      type: run.type,
+      position: {
+        x: Math.round(run.start_pos_x),
+        y: Math.round(run.start_pos_y)
+      },
+      dimensions: {
+        length: Math.round(run.length),
+        depth: Math.round(run.depth)
+      },
+      rotation_z: Math.round(run.rotation_z),
+      properties: {
+        start_type: run.start_type,
+        end_type: run.end_type,
+        top_filler: run.top_filler,
+        is_island: run.is_island
+      }
+    };
+  });
 
-    return jsonData;
+  // Additional metadata with cabinet runs included
+  const exportObject = {
+    projectData: {
+      rooms: exportData,
+      cabinetRuns: cabinetRunData,
+      exportDate: new Date().toISOString()
+    }
   };
+
+  // Convert to JSON string with 2-space indentation
+  const jsonData = JSON.stringify(exportObject, null, 2);
+  
+  // Copy to clipboard
+  navigator.clipboard.writeText(jsonData)
+    .then(() => {
+      alert('Room data copied to clipboard!');
+    })
+    .catch(err => {
+      console.error('Failed to copy data: ', err);
+      alert('Failed to copy data to clipboard. See console for details.');
+    });
+
+  return jsonData;
+};
 
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
@@ -1522,6 +2288,30 @@ const handleForceUpdateSecondaryRooms = () => {
   
     const mousePos = getMousePosition(e);
     
+    // If we're adding a cabinet run, place it
+    if (isAddingRun) {
+      createCabinetRun(mousePos);
+      return;
+    }
+    
+    // Check if clicking on a cabinet run
+    const runId = findRunAtPosition(mousePos);
+    if (runId) {
+      const run = cabinetRuns.find(r => r.id === runId);
+      if (run) {
+        setSelectedRun(runId);
+        setDraggedRun({
+          id: runId,
+          startX: mousePos.x,
+          startY: mousePos.y,
+          initialRotation: run.rotation_z
+        });
+        setIsDragging(true);
+        return;
+      }
+    }
+    
+    // Existing code for doors
     if (addingDoor) {
       const closestLine = findClosestLine(mousePos);
       if (closestLine) {
@@ -1578,6 +2368,7 @@ const handleForceUpdateSecondaryRooms = () => {
       return;
     }
   
+    // Existing code for windows
     if (addingWindow) {
       const closestLine = findClosestLine(mousePos);
       if (closestLine) {
@@ -1634,6 +2425,7 @@ const handleForceUpdateSecondaryRooms = () => {
       return;
     }
   
+    // Existing code for points, doors, windows
     const windowPoint = findNearestWindowPoint(mousePos);
     if (windowPoint) {
       setSelectedWindowPoint(windowPoint);
@@ -1801,6 +2593,84 @@ const handleForceUpdateSecondaryRooms = () => {
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isDragging) {
       const mousePos = getMousePosition(e);
+      
+      // Handle dragging cabinet runs
+      if (draggedRun) {
+        const run = cabinetRuns.find(r => r.id === draggedRun.id);
+        if (!run) return;
+        
+        // Calculate the movement delta
+        const dx = mousePos.x - draggedRun.startX;
+        const dy = mousePos.y - draggedRun.startY;
+        
+        // New position without snapping
+        const newPosX = run.start_pos_x + dx;
+        const newPosY = run.start_pos_y + dy;
+        
+        // Create temporary run at the new position to check for snapping
+        const tempRun: CabinetRun = {
+          ...run,
+          start_pos_x: newPosX,
+          start_pos_y: newPosY
+        };
+        
+        // Check for snapping if enabled
+        if (runSnapSettings.enabled) {
+          const snapResult = findBestWallSnapForRun(tempRun);
+          
+          if (snapResult.shouldSnap && snapResult.newX !== undefined && snapResult.newY !== undefined) {
+            // Update the run with snapped position and rotation
+            setCabinetRuns(prevRuns => prevRuns.map(r => 
+              r.id === draggedRun.id 
+                ? {
+                    ...r,
+                    start_pos_x: snapResult.newX!,
+                    start_pos_y: snapResult.newY!,
+                    rotation_z: snapResult.newRotation !== undefined ? snapResult.newRotation : r.rotation_z,
+                    snapInfo: {
+                      isSnapped: true,
+                      snappedEdge: snapResult.snapEdge,
+                      snappedToWall: snapResult.snapWall
+                    }
+                  }
+                : r
+            ));
+          } else {
+            // No snap - just update position
+            setCabinetRuns(prevRuns => prevRuns.map(r => 
+              r.id === draggedRun.id 
+                ? {
+                    ...r,
+                    start_pos_x: newPosX,
+                    start_pos_y: newPosY,
+                    snapInfo: undefined
+                  }
+                : r
+            ));
+          }
+        } else {
+          // Snapping disabled - just update position
+          setCabinetRuns(prevRuns => prevRuns.map(r => 
+            r.id === draggedRun.id 
+              ? {
+                  ...r,
+                  start_pos_x: newPosX,
+                  start_pos_y: newPosY,
+                  snapInfo: undefined
+                }
+              : r
+          ));
+        }
+        
+        // Update drag start position for next move
+        setDraggedRun({
+          ...draggedRun,
+          startX: mousePos.x,
+          startY: mousePos.y
+        });
+        
+        return;
+      }
       
       // Store the selected point for use when drag ends
       if (selectedPoint) {
@@ -2188,14 +3058,25 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
   return updatedRoom;
 };
   
-  const handleCanvasMouseUp = () => {
-    setIsDragging(false);
-    setSelectedPoint(null);
-    setSelectedDoorPoint(null);
-    setSelectedWindowPoint(null);
-    setIsPanning(false);
-    setLastPanPosition(null);
-  };
+const handleCanvasMouseUp = () => {
+  // Clean up dragging state for cabinet runs
+  if (draggedRun) {
+    const run = cabinetRuns.find(r => r.id === draggedRun.id);
+    if (run && run.snapInfo) {
+      // Apply final snap adjustments if needed
+    }
+    setDraggedRun(null);
+  }
+  
+  // Existing cleanup code
+  setIsDragging(false);
+  setSelectedPoint(null);
+  setSelectedDoorPoint(null);
+  setSelectedWindowPoint(null);
+  setIsPanning(false);
+  setLastPanPosition(null);
+  setResizingRun(null);
+};
 
  
 
@@ -2925,6 +3806,137 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         });
       }
     });
+  
+    // Draw cabinet runs
+    cabinetRuns.forEach(run => {
+      // Save canvas state
+      ctx.save();
+      
+      // Convert position to screen coordinates
+      const screenPos = worldToScreen(run.start_pos_x, run.start_pos_y);
+      
+      // Transform for rotation
+      ctx.translate(screenPos.x, screenPos.y);
+      ctx.rotate((run.rotation_z * Math.PI) / 180);
+      
+      // Calculate dimensions in screen coordinates
+      const width = run.length * scale;
+      const height = run.depth * scale;
+      
+      // Calculate visual height for 3D effect based on run type
+      const visualHeight = run.type === 'Base' ? DEFAULT_BASE_HEIGHT * scale : DEFAULT_UPPER_HEIGHT * scale;
+      
+      // Draw 3D effect for runs
+      if (run.type === 'Upper') {
+        // Upper cabinets with shadow
+        ctx.fillStyle = 'rgba(220, 220, 230, 0.2)';
+        ctx.fillRect(0, -visualHeight, width, visualHeight);
+      } else {
+        // Base cabinets with shadow
+        ctx.fillStyle = 'rgba(200, 200, 210, 0.2)';
+        ctx.fillRect(0, 0, width, visualHeight * 0.1); // Small shadow for depth
+      }
+      
+      // Draw main run rectangle
+      ctx.beginPath();
+      ctx.rect(0, 0, width, height);
+      
+      // Fill with color based on type
+      if (run.type === 'Base') {
+        ctx.fillStyle = 'rgba(255, 240, 220, 0.6)'; // Light wooden color for base
+      } else {
+        ctx.fillStyle = 'rgba(240, 245, 255, 0.6)'; // Light blue-ish for upper
+      }
+      ctx.fill();
+      
+      // Stroke with color based on selection state
+      ctx.strokeStyle = selectedRun === run.id ? '#dc2626' : run.type === 'Base' ? '#d97706' : '#3b82f6';
+      ctx.lineWidth = selectedRun === run.id ? 3 : 2;
+      ctx.stroke();
+      
+      // Draw visual cues for start and end types
+      if (run.start_type === 'Wall') {
+        // Draw wall indicator at start
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, height);
+        ctx.strokeStyle = '#6b7280';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      
+      if (run.end_type === 'Wall') {
+        // Draw wall indicator at end
+        ctx.beginPath();
+        ctx.moveTo(width, 0);
+        ctx.lineTo(width, height);
+        ctx.strokeStyle = '#6b7280';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      
+      // Draw island indicator if applicable
+      if (run.is_island) {
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) * 0.1;
+        
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.fillStyle = '#8b5cf6'; // Purple for island indicator
+        ctx.fill();
+      }
+      
+      // Draw top filler indicator if applicable
+      if (run.top_filler) {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(width, 0);
+        ctx.strokeStyle = '#059669'; // Green for top filler
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      
+      // Draw snap indicator if snapping
+      if (run.snapInfo?.isSnapped) {
+        const edgeName = run.snapInfo.snappedEdge;
+        
+        ctx.beginPath();
+        if (edgeName === 'left') {
+          ctx.moveTo(0, 0);
+          ctx.lineTo(0, height);
+        } else if (edgeName === 'right') {
+          ctx.moveTo(width, 0);
+          ctx.lineTo(width, height);
+        } else if (edgeName === 'top') {
+          ctx.moveTo(0, 0);
+          ctx.lineTo(width, 0);
+        } else if (edgeName === 'bottom') {
+          ctx.moveTo(0, height);
+          ctx.lineTo(width, height);
+        }
+        
+        ctx.strokeStyle = '#10b981'; // Green for snap indicator
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+      
+      // Draw run ID and dimensions
+      ctx.font = '12px Arial';
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      // Draw run ID
+      const runNumber = run.id.split('-')[1];
+      ctx.fillText(`Run ${runNumber} (${run.type})`, width / 2, height / 2);
+      
+      // Draw dimensions below
+      ctx.fillText(`${Math.round(run.length)}mm × ${Math.round(run.depth)}mm`, width / 2, height / 2 + 16);
+      
+      // Restore canvas state
+      ctx.restore();
+    });
   };
 
   useEffect(() => {
@@ -2964,16 +3976,26 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
               {addingWindow ? 'Adding Window...' : 'Add Window'}
             </button>
             <button
-              onClick={() => {
-                setRooms([]);
-                setActiveRoomId(null);
-                setIsAddingSecondaryRoom(false);
-              }}
-              className="flex items-center gap-2 px-4 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+              onClick={startAddingRun}
+              disabled={!rooms.some(r => r.isMain && r.isComplete) || isAddingRun}
+              className="flex items-center gap-2 px-4 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RotateCcw size={16} />
-              Reset All
+              <BookmarkPlus size={16} />
+              {isAddingRun ? 'Adding Cabinet Run...' : 'Add Cabinet Run'}
             </button>
+            <button
+            onClick={() => {
+              setRooms([]);
+              setActiveRoomId(null);
+              setIsAddingSecondaryRoom(false);
+              setCabinetRuns([]); // Add this line to clear cabinet runs
+            }}
+            className="flex items-center gap-2 px-4 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+          >
+            <RotateCcw size={16} />
+            Reset All
+          </button>
+            
             <button
               onClick={exportRoomData}
               disabled={rooms.length === 0 || !rooms.some(r => r.isComplete)}
@@ -3059,10 +4081,43 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           </div>
         )}
 
+        {isAddingRun && (
+          <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-amber-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-amber-800">Adding Cabinet Run</h3>
+                <p className="text-sm text-amber-700">
+                  Click in the room where you want to place the cabinet run. It will snap to walls when placed nearby.
+                </p>
+                <div className="mt-2 flex items-center gap-4">
+                  <div className="flex items-center">
+                    <label htmlFor="runType" className="mr-2 text-sm text-amber-800">Type:</label>
+                    <select
+                      id="runType"
+                      value={newRunType}
+                      onChange={(e) => setNewRunType(e.target.value as 'Base' | 'Upper')}
+                      className="px-2 py-1 border border-amber-300 rounded bg-white"
+                    >
+                      <option value="Base">Base</option>
+                      <option value="Upper">Upper</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddingRun(false)}
+                className="px-3 py-1 bg-amber-600 text-white rounded hover:bg-amber-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <canvas
           ref={canvasRef}
-          width={800}
-          height={600}
+          width={CANVAS_WIDTH_px}
+          height={CANVAS_HEIGHT_px}
           onClick={handleCanvasClick}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
@@ -3116,9 +4171,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             </div>
           )}
         </ContextMenu>
-      )}
-
-        
+      )}  
       </div>
       
 
@@ -3410,8 +4463,224 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           </div>
         </div>
       )}
-    </div>
-  );
+
+    {cabinetRuns.length > 0 && (
+      <div className="bg-white rounded-lg shadow-lg p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Cabinet Runs</h2>
+          
+          <select
+            value={selectedRun || ''}
+            onChange={(e) => setSelectedRun(e.target.value)}
+            className="px-3 py-1 border border-gray-300 rounded"
+          >
+            <option value="">Select Cabinet Run</option>
+            {cabinetRuns.map(run => (
+              <option key={run.id} value={run.id}>
+                Run {run.id.split('-')[1]} ({run.type})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedRun ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Property
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Value
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {/* Position properties */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    X Position (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_x || 0)}
+                      onChange={(e) => updateRunProperty(selectedRun, 'start_pos_x', Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Y Position (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_y || 0)}
+                      onChange={(e) => updateRunProperty(selectedRun, 'start_pos_y', Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                
+                {/* Dimension properties */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Length (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.length || 0)}
+                      onChange={(e) => updateRunProperty(selectedRun, 'length', Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Depth (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
+                      onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                
+                {/* Rotation property */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Rotation (°)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
+                      onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                    <button 
+                      onClick={() => rotateRun(selectedRun, -90)}
+                      className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                      title="Rotate 90° Counter-Clockwise"
+                    >
+                      -90°
+                    </button>
+                    <button 
+                      onClick={() => rotateRun(selectedRun, 90)}
+                      className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                      title="Rotate 90° Clockwise"
+                    >
+                      +90°
+                    </button>
+                  </td>
+                </tr>
+                
+                {/* Type properties */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Type
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <select
+                      value={cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'}
+                      onChange={(e) => updateRunProperty(selectedRun, 'type', e.target.value)}
+                      className="w-32 px-2 py-1 border border-gray-300 rounded"
+                    >
+                      <option value="Base">Base</option>
+                      <option value="Upper">Upper</option>
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Start Type
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <select
+                      value={cabinetRuns.find(r => r.id === selectedRun)?.start_type || 'Open'}
+                      onChange={(e) => updateRunProperty(selectedRun, 'start_type', e.target.value)}
+                      className="w-32 px-2 py-1 border border-gray-300 rounded"
+                    >
+                      <option value="Open">Open</option>
+                      <option value="Wall">Wall</option>
+                    </select>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    End Type
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <select
+                      value={cabinetRuns.find(r => r.id === selectedRun)?.end_type || 'Open'}
+                      onChange={(e) => updateRunProperty(selectedRun, 'end_type', e.target.value)}
+                      className="w-32 px-2 py-1 border border-gray-300 rounded"
+                    >
+                      <option value="Open">Open</option>
+                      <option value="Wall">Wall</option>
+                    </select>
+                  </td>
+                </tr>
+                
+                {/* Boolean properties */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Top Filler
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={cabinetRuns.find(r => r.id === selectedRun)?.top_filler || false}
+                      onChange={() => toggleRunProperty(selectedRun, 'top_filler')}
+                      className="w-4 h-4 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Is Island
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="checkbox"
+                      checked={cabinetRuns.find(r => r.id === selectedRun)?.is_island || false}
+                      onChange={() => toggleRunProperty(selectedRun, 'is_island')}
+                      className="w-4 h-4 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                
+                {/* Actions */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Actions
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button
+                      onClick={() => deleteRun(selectedRun)}
+                      className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500">Select a cabinet run to edit its properties</p>
+        )}
+      </div>
+    )}
+  </div>
+);
 };
 
 export default RoomDesigner;
