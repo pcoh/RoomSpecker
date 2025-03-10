@@ -165,10 +165,18 @@ const CANVAS_WIDTH_MM = 10000;
 const CANVAS_HEIGHT_MM = 6000;
 const CANVAS_WIDTH_px = 1200;
 const CANVAS_HEIGHT_px = 600;
+
+// Default values for new cabinet runs
+const DEFAULT_RUN_LENGTH = 1000; // 1m
+const DEFAULT_RUN_DEPTH = 635;   // 0.635m
+const DEFAULT_BASE_HEIGHT = 900;     // 0.9m (for visual representation)
+const DEFAULT_UPPER_HEIGHT = 700;    // 0.7m (for visual representation)
+const DEFAULT_UPPER_OFFSET = 1500;   // 1.5m from floor (for visual representation)
+
 //Run snapping constants:
 const SNAP_DISTANCE_MM = 50; // Distance in mm to snap to walls
 const SNAP_ANGLE_THRESHOLD = 5; // Degrees threshold for angular snapping
-const SNAP_ROTATION_INCREMENT = 90; // Snap rotation to 90-degree increments
+const SNAP_ROTATION_INCREMENT = 0.01; // Snap rotation to 90-degree increments
 
 
 const RoomDesigner: React.FC = () => {
@@ -217,12 +225,12 @@ const RoomDesigner: React.FC = () => {
     threshold: 50, // 50mm snap threshold
     rotationSnap: 90  // Snap to 90-degree increments
   });
-// Default values for new cabinet runs
-const DEFAULT_RUN_LENGTH = 1000; // 1m
-const DEFAULT_RUN_DEPTH = 635;   // 0.635m
-// const DEFAULT_BASE_HEIGHT = 900;     // 0.9m (for visual representation)
-// const DEFAULT_UPPER_HEIGHT = 700;    // 0.7m (for visual representation)
-// const DEFAULT_UPPER_OFFSET = 1500;   // 1.5m from floor (for visual representation)
+  const [hoverRun, setHoverRun] = useState<string | null>(null);
+  
+
+
+
+
   
   
 
@@ -1552,61 +1560,64 @@ const handleForceUpdateSecondaryRooms = () => {
   };
 
   // Calculate the optimal rotation to align with a wall
-const calculateWallAlignment = (
-  wallStart: Point, 
-  wallEnd: Point,
-  runRotation: number
-): number => {
-  // Calculate wall angle in degrees
-  const wallAngle = Math.atan2(
-    wallEnd.y - wallStart.y,
-    wallEnd.x - wallStart.x
-  ) * (180 / Math.PI);
-  
-  // Normalize to 0-360
-  const normalizedWallAngle = (wallAngle + 360) % 360;
-  
-  // Calculate potential alignments (parallel or perpendicular)
-  const parallelAngles = [
-    normalizedWallAngle,
-    (normalizedWallAngle + 180) % 360
-  ];
-  
-  const perpendicularAngles = [
-    (normalizedWallAngle + 90) % 360,
-    (normalizedWallAngle + 270) % 360
-  ];
-  
-  // Combine all potential alignment angles
-  const potentialAngles = [...parallelAngles, ...perpendicularAngles];
-  
-  // Find the closest angle to current rotation
-  let closestAngle = potentialAngles[0];
-  let minDifference = 360;
-  
-  for (const angle of potentialAngles) {
-    // Calculate angle difference (considering the circular nature)
-    let diff = Math.abs(angle - runRotation);
-    if (diff > 180) diff = 360 - diff;
+  const calculateWallAlignment = (
+    wallStart: Point, 
+    wallEnd: Point,
+    runRotation: number
+  ): number => {
+    // Calculate wall angle in degrees
+    const wallAngle = Math.atan2(
+      wallEnd.y - wallStart.y,
+      wallEnd.x - wallStart.x
+    ) * (180 / Math.PI);
     
-    if (diff < minDifference) {
-      minDifference = diff;
-      closestAngle = angle;
+    // Normalize to 0-360
+    const normalizedWallAngle = (wallAngle + 360) % 360;
+    
+    // For back of cabinet to align with wall, we need to rotate 180 degrees from wall direction
+    const alignedAngle = (normalizedWallAngle + 180) % 360;
+    
+    // For side of cabinet to align with wall, offset by 90 or 270 degrees
+    const sideAlignedAngles = [
+      (normalizedWallAngle + 90) % 360,
+      (normalizedWallAngle + 270) % 360
+    ];
+    
+    // Combine all potential alignment angles
+    const potentialAngles = [normalizedWallAngle, alignedAngle, ...sideAlignedAngles];
+    
+    // Find the closest angle to current rotation
+    let closestAngle = potentialAngles[0];
+    let minDifference = 360;
+    
+    for (const angle of potentialAngles) {
+      // Calculate angle difference (considering the circular nature)
+      let diff = Math.abs(angle - runRotation);
+      if (diff > 180) diff = 360 - diff;
+      
+      if (diff < minDifference) {
+        minDifference = diff;
+        closestAngle = angle;
+      }
     }
-  }
-  
-  // If the difference is within threshold, snap to the closest angle
-  if (minDifference <= SNAP_ANGLE_THRESHOLD) {
-    return closestAngle;
-  }
-  
-  // Otherwise snap to increments of 90 degrees
-  return Math.round(runRotation / SNAP_ROTATION_INCREMENT) * SNAP_ROTATION_INCREMENT;
-};
+    
+    // If the difference is within threshold, snap to the closest angle
+    if (minDifference <= SNAP_ANGLE_THRESHOLD) {
+      return closestAngle;
+    }
+    
+    // Otherwise use the current rotation but snap to smaller increments if configured
+    if (SNAP_ROTATION_INCREMENT > 0) {
+      return Math.round(runRotation / SNAP_ROTATION_INCREMENT) * SNAP_ROTATION_INCREMENT;
+    }
+    
+    return runRotation;
+  };
   
   // Check if a point is inside a cabinet run
   const isPointInRun = (point: Point, run: CabinetRun): boolean => {
-    const corners = calculateRunCorners(run);
+    // Expand the hit area around runs to make them easier to select
+    const hitAreaExpansion = 10 / scale; // 10 pixels in world coordinates
     
     // Transform the point to local coordinates
     const rotationRad = (-run.rotation_z * Math.PI) / 180;
@@ -1621,12 +1632,12 @@ const calculateWallAlignment = (
     const rotatedX = translatedX * cos - translatedY * sin;
     const rotatedY = translatedX * sin + translatedY * cos;
     
-    // Check if point is inside rectangle bounds
+    // Check if point is inside rectangle bounds with expanded hit area
     return (
-      rotatedX >= 0 && 
-      rotatedX <= run.length && 
-      rotatedY >= 0 && 
-      rotatedY <= run.depth
+      rotatedX >= -hitAreaExpansion && 
+      rotatedX <= run.length + hitAreaExpansion && 
+      rotatedY >= -hitAreaExpansion && 
+      rotatedY <= run.depth + hitAreaExpansion
     );
   };
   
@@ -1639,6 +1650,7 @@ const calculateWallAlignment = (
     }
     return null;
   };
+
   const pointToLineDistance = (point: Point, lineStart: Point, lineEnd: Point): {
     distance: number;
     closestPoint: Point;
@@ -1757,30 +1769,77 @@ const calculateWallAlignment = (
         const p1 = room.points[wallIndex];
         const p2 = room.points[(wallIndex + 1) % room.points.length];
         
-        // Check each edge of the run for potential snapping
-        for (const edge of edges) {
-          // Get midpoint of run edge
+        // Prioritize the back edge of the cabinet run for snapping
+        // In our coordinate system, 'bottom' is the back of the run
+        const backEdge = edges.find(e => e.name === 'bottom');
+        if (backEdge) {
           const edgeMid = {
-            x: (edge.start.x + edge.end.x) / 2,
-            y: (edge.start.y + edge.end.y) / 2
+            x: (backEdge.start.x + backEdge.end.x) / 2,
+            y: (backEdge.start.y + backEdge.end.y) / 2
           };
           
-          // Calculate distance to wall
           const { distance, closestPoint } = pointToLineDistance(edgeMid, p1, p2);
           
-          // If this is the closest wall so far and within threshold
           if (distance < minDistance) {
-            // Calculate more detailed snap information
-            const snapResult = checkRunEdgeToWallSnap(edge.start, edge.end, room, wallIndex);
+            // Calculate wall angle
+            const wallAngle = Math.atan2(
+              p2.y - p1.y,
+              p2.x - p1.x
+            ) * (180 / Math.PI);
             
-            if (snapResult.shouldSnap) {
+            // For back of cabinet to align with wall, we want
+            // the cabinet rotated so its back is parallel to the wall
+            const newRotation = (wallAngle + 180) % 360;
+            
+            minDistance = distance;
+            bestSnapResult = {
+              shouldSnap: true,
+              snapEdge: 'bottom',
+              snapWall: { roomId: room.id, wallIndex },
+              newX: closestPoint.x - (edgeMid.x - run.start_pos_x),
+              newY: closestPoint.y - (edgeMid.y - run.start_pos_y),
+              newRotation: newRotation
+            };
+          }
+        }
+        
+        // Check other edges if we haven't found a good back edge snap
+        if (!bestSnapResult.shouldSnap) {
+          for (const edge of edges) {
+            if (edge.name === 'bottom') continue; // Skip back edge as we already checked it
+            
+            const edgeMid = {
+              x: (edge.start.x + edge.end.x) / 2,
+              y: (edge.start.y + edge.end.y) / 2
+            };
+            
+            const { distance, closestPoint } = pointToLineDistance(edgeMid, p1, p2);
+            
+            if (distance < minDistance) {
+              // Calculate wall angle
+              const wallAngle = Math.atan2(
+                p2.y - p1.y,
+                p2.x - p1.x
+              ) * (180 / Math.PI);
+              
+              // Calculate appropriate rotation based on which edge we're snapping
+              let newRotation;
+              
+              if (edge.name === 'top') {
+                newRotation = wallAngle; // Top edge parallel to wall
+              } else if (edge.name === 'left' || edge.name === 'right') {
+                // Side edges should be perpendicular to wall
+                newRotation = (wallAngle + 90) % 360;
+              }
+              
               minDistance = distance;
               bestSnapResult = {
-                ...snapResult,
+                shouldSnap: true,
                 snapEdge: edge.name,
-                // Calculate new position based on the closest point
+                snapWall: { roomId: room.id, wallIndex },
                 newX: closestPoint.x - (edgeMid.x - run.start_pos_x),
-                newY: closestPoint.y - (edgeMid.y - run.start_pos_y)
+                newY: closestPoint.y - (edgeMid.y - run.start_pos_y),
+                newRotation: newRotation
               };
             }
           }
@@ -1979,9 +2038,15 @@ const calculateWallAlignment = (
           return run;
         }));
       } else {
-        // Create new run with snap
+        // Create new run with snap - use integer ID
+        // Find the highest existing run ID and increment by 1
+        const highestId = cabinetRuns.length > 0 
+          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+          : 0;
+        const newRunId = (highestId + 1).toString();
+        
         const newRun: CabinetRun = {
-          id: `run-${cabinetRuns.length + 1}`,
+          id: newRunId,
           start_pos_x: snapResult.newX!,
           start_pos_y: snapResult.newY!,
           length: DEFAULT_RUN_LENGTH,
@@ -2000,7 +2065,7 @@ const calculateWallAlignment = (
         };
         
         setCabinetRuns([...cabinetRuns, newRun]);
-        setSelectedRun(newRun.id);
+        setSelectedRun(newRunId);
       }
     } else {
       // No snap - just update or create at mouse position
@@ -2017,9 +2082,15 @@ const calculateWallAlignment = (
           return run;
         }));
       } else {
-        // Create new run without snap
+        // Create new run without snap - use integer ID
+        // Find the highest existing run ID and increment by 1
+        const highestId = cabinetRuns.length > 0 
+          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+          : 0;
+        const newRunId = (highestId + 1).toString();
+        
         const newRun: CabinetRun = {
-          id: `run-${cabinetRuns.length + 1}`,
+          id: newRunId,
           start_pos_x: mousePos.x,
           start_pos_y: mousePos.y,
           length: DEFAULT_RUN_LENGTH,
@@ -2033,7 +2104,7 @@ const calculateWallAlignment = (
         };
         
         setCabinetRuns([...cabinetRuns, newRun]);
-        setSelectedRun(newRun.id);
+        setSelectedRun(newRunId);
       }
     }
     
@@ -2082,9 +2153,15 @@ const createCabinetRun = (position: Point) => {
   // Check if we should snap to a wall
   const snapResult = calculateRunSnapPosition(position, 0);
   
-  // Create new cabinet run
+  // Create new cabinet run with a unique integer ID
+  // Find the highest existing run ID and increment by 1
+  const highestId = cabinetRuns.length > 0 
+    ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+    : 0;
+  const newRunId = (highestId + 1).toString();
+  
   const newRun: CabinetRun = {
-    id: `run-${cabinetRuns.length + 1}`,
+    id: newRunId,
     start_pos_x: snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x,
     start_pos_y: snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y,
     length: DEFAULT_RUN_LENGTH,
@@ -2102,8 +2179,8 @@ const createCabinetRun = (position: Point) => {
     } : undefined
   };
   
-  setCabinetRuns([...cabinetRuns, newRun]);
-  setSelectedRun(newRun.id);
+  setCabinetRuns(prevRuns => [...prevRuns, newRun]);
+  setSelectedRun(newRunId);
   setIsAddingRun(false);
 };
 
@@ -2294,7 +2371,7 @@ const exportRoomData = () => {
       return;
     }
     
-    // Check if clicking on a cabinet run
+    // Check if clicking on a cabinet run - prioritize this check
     const runId = findRunAtPosition(mousePos);
     if (runId) {
       const run = cabinetRuns.find(r => r.id === runId);
@@ -2307,6 +2384,7 @@ const exportRoomData = () => {
           initialRotation: run.rotation_z
         });
         setIsDragging(true);
+        e.stopPropagation(); // Prevent this event from triggering other handlers
         return;
       }
     }
@@ -2591,9 +2669,23 @@ const exportRoomData = () => {
   };
 
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const mousePos = getMousePosition(e);
+    
+    // Check for hover over runs when not dragging
+    if (!isDragging && !isPanning) {
+      const runId = findRunAtPosition(mousePos);
+      if (runId !== hoverRun) {
+        setHoverRun(runId);
+        
+        // Change cursor style
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.style.cursor = runId ? 'move' : 'crosshair';
+        }
+      }
+    }
+    
     if (isDragging) {
-      const mousePos = getMousePosition(e);
-      
       // Handle dragging cabinet runs
       if (draggedRun) {
         const run = cabinetRuns.find(r => r.id === draggedRun.id);
@@ -2852,7 +2944,7 @@ const exportRoomData = () => {
             window.endPoint = closestPoint;
             window.width = Math.sqrt(
               Math.pow(closestPoint.x - window.startPoint.x, 2) + 
-              Math.pow(window.startPoint.y - closestPoint.y, 2)
+              Math.pow(closestPoint.y - window.startPoint.y, 2)
             );
           }
     
@@ -2885,7 +2977,7 @@ const exportRoomData = () => {
             );
             door.width = Math.sqrt(
               Math.pow(door.endPoint.x - closestPoint.x, 2) + 
-              Math.pow(door.startPoint.y - closestPoint.y, 2)
+              Math.pow(door.endPoint.y - closestPoint.y, 2)
             );
           } else {
             door.endPoint = closestPoint;
@@ -3853,6 +3945,28 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.strokeStyle = selectedRun === run.id ? '#dc2626' : run.type === 'Base' ? '#d97706' : '#3b82f6';
       ctx.lineWidth = selectedRun === run.id ? 3 : 2;
       ctx.stroke();
+  
+      // Add a subtle visual cue if the run is being hovered over
+      if (hoverRun === run.id) {
+        // Draw a subtle highlight around the run
+        ctx.beginPath();
+        ctx.rect(-5, -5, width + 10, height + 10);
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; // Light blue highlight
+        ctx.lineWidth = 2;
+        ctx.setLineDash([2, 2]); // Dotted outline
+        ctx.stroke();
+        ctx.setLineDash([]); // Reset dash pattern
+      }
+  
+      // Draw back wall with dashed line
+      ctx.beginPath();
+      ctx.moveTo(0, height);
+      ctx.lineTo(width, height);
+      ctx.setLineDash([5, 3]); // Set dashed line pattern
+      ctx.strokeStyle = '#4B5563'; // Dark gray for back wall
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]); // Reset dash pattern for subsequent drawing
       
       // Draw visual cues for start and end types
       if (run.start_type === 'Wall') {
@@ -3928,7 +4042,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.textBaseline = 'middle';
       
       // Draw run ID
-      const runNumber = run.id.split('-')[1];
+      const runNumber = run.id; // Changed from: const runNumber = run.id.split('-')[1] || '';
       ctx.fillText(`Run ${runNumber} (${run.type})`, width / 2, height / 2);
       
       // Draw dimensions below
@@ -3941,7 +4055,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
 
   useEffect(() => {
     drawRoom();
-  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow]);
+  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun]);
 
   return (
     <div className="space-y-8">
@@ -4477,7 +4591,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             <option value="">Select Cabinet Run</option>
             {cabinetRuns.map(run => (
               <option key={run.id} value={run.id}>
-                Run {run.id.split('-')[1]} ({run.type})
+                Run {run.id} ({run.type})
               </option>
             ))}
           </select>
