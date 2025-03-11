@@ -1526,28 +1526,34 @@ const handleForceUpdateSecondaryRooms = () => {
     const cos = Math.cos(rotationRad);
     const sin = Math.sin(rotationRad);
     
-    // Corners relative to start position
-    const topLeft = {
+    // Start position is the LEFT rear corner
+    const rearLeft = {
       x: run.start_pos_x,
       y: run.start_pos_y
     };
     
-    const topRight = {
-      x: run.start_pos_x + run.length * cos,
-      y: run.start_pos_y + run.length * sin
+    // Calculate other corners relative to the left rear corner
+    const rearRight = {
+      x: rearLeft.x + run.length * cos,
+      y: rearLeft.y + run.length * sin
     };
     
-    const bottomRight = {
-      x: topRight.x - run.depth * sin,
-      y: topRight.y + run.depth * cos
+    const frontLeft = {
+      x: rearLeft.x - run.depth * sin,
+      y: rearLeft.y + run.depth * cos
     };
     
-    const bottomLeft = {
-      x: topLeft.x - run.depth * sin,
-      y: topLeft.y + run.depth * cos
+    const frontRight = {
+      x: rearRight.x - run.depth * sin,
+      y: rearRight.y + run.depth * cos
     };
     
-    return { topLeft, topRight, bottomRight, bottomLeft };
+    return { 
+      topLeft: frontLeft, 
+      topRight: frontRight, 
+      bottomRight: rearRight, 
+      bottomLeft: rearLeft 
+    };
   };
 
   const calculateRunEdges = (corners: RunCorners): Array<{start: Point, end: Point, type: string}> => {
@@ -1748,107 +1754,87 @@ const handleForceUpdateSecondaryRooms = () => {
   };
   
   // Find the best wall to snap a run to
-  const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
-    // Calculate run corners
-    const corners = calculateRunCorners(run);
-    const edges = [
-      { start: corners.topLeft, end: corners.topRight, name: 'top' as const },
-      { start: corners.topRight, end: corners.bottomRight, name: 'right' as const },
-      { start: corners.bottomRight, end: corners.bottomLeft, name: 'bottom' as const },
-      { start: corners.bottomLeft, end: corners.topLeft, name: 'left' as const }
-    ];
+  // Fix for the findBestWallSnapForRun function
+const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
+  // Don't try to snap if there are no rooms
+  if (!rooms.some(r => r.isComplete)) {
+    return { shouldSnap: false };
+  }
+  
+  // Calculate current corners of the run using the new LEFT rear corner model
+  const corners = calculateRunCorners(run);
+  
+  // Get all edges of the run
+  const edges = calculateRunEdges(corners);
+  
+  // Track the best snap found
+  let bestSnap = {
+    shouldSnap: false,
+    snapDistance: SNAP_DISTANCE_MM / scale,
+    snapEdge: undefined as 'left' | 'right' | 'top' | 'bottom' | undefined,
+    snapWall: { roomId: '', wallIndex: -1 },
+    newX: run.start_pos_x,
+    newY: run.start_pos_y,
+    newRotation: run.rotation_z
+  };
+  
+  // Check all completed rooms
+  for (const room of rooms) {
+    if (!room.isComplete || room.points.length < 3) continue;
     
-    let bestSnapResult: RunSnapResult = { shouldSnap: false };
-    let minDistance = runSnapSettings.threshold / scale;
-    
-    // Check all rooms and their walls
-    for (const room of rooms) {
-      if (!room.isComplete) continue;
+    // Check each wall in the room
+    for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
+      const wallStart = room.points[wallIndex];
+      const wallEnd = room.points[(wallIndex + 1) % room.points.length];
       
-      for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
-        const p1 = room.points[wallIndex];
-        const p2 = room.points[(wallIndex + 1) % room.points.length];
+      // Check each edge of the cabinet run against this wall
+      for (const edge of edges) {
+        // Use the midpoint of the edge for initial distance check
+        const edgeMidpoint = {
+          x: (edge.start.x + edge.end.x) / 2,
+          y: (edge.start.y + edge.end.y) / 2
+        };
         
-        // Prioritize the back edge of the cabinet run for snapping
-        // In our coordinate system, 'bottom' is the back of the run
-        const backEdge = edges.find(e => e.name === 'bottom');
-        if (backEdge) {
-          const edgeMid = {
-            x: (backEdge.start.x + backEdge.end.x) / 2,
-            y: (backEdge.start.y + backEdge.end.y) / 2
+        // Calculate distance from edge midpoint to wall
+        const { distance, closestPoint } = distancePointToWall(
+          edgeMidpoint, wallStart, wallEnd
+        );
+        
+        // If this is closer than our current best and within threshold
+        if (distance < bestSnap.snapDistance) {
+          // Calculate an alignment rotation
+          const newRotation = calculateWallAlignment(
+            wallStart, wallEnd, run.rotation_z
+          );
+          
+          // Calculate how much we need to move to snap
+          const dx = closestPoint.x - edgeMidpoint.x;
+          const dy = closestPoint.y - edgeMidpoint.y;
+          
+          // Ensure edge.type is a valid snap edge type
+          const edgeType = edge.type as string;
+          const validEdgeType = (edgeType === 'left' || edgeType === 'right' || 
+                                edgeType === 'top' || edgeType === 'bottom') 
+                                ? edgeType as 'left' | 'right' | 'top' | 'bottom' 
+                                : undefined;
+          
+          // Update best snap - with position directly representing the LEFT rear corner
+          bestSnap = {
+            shouldSnap: true,
+            snapDistance: distance,
+            snapEdge: validEdgeType,
+            snapWall: { roomId: room.id, wallIndex },
+            newX: run.start_pos_x + dx,
+            newY: run.start_pos_y + dy,
+            newRotation
           };
-          
-          const { distance, closestPoint } = pointToLineDistance(edgeMid, p1, p2);
-          
-          if (distance < minDistance) {
-            // Calculate wall angle
-            const wallAngle = Math.atan2(
-              p2.y - p1.y,
-              p2.x - p1.x
-            ) * (180 / Math.PI);
-            
-            // For back of cabinet to align with wall, we want
-            // the cabinet rotated so its back is parallel to the wall
-            const newRotation = (wallAngle + 180) % 360;
-            
-            minDistance = distance;
-            bestSnapResult = {
-              shouldSnap: true,
-              snapEdge: 'bottom',
-              snapWall: { roomId: room.id, wallIndex },
-              newX: closestPoint.x - (edgeMid.x - run.start_pos_x),
-              newY: closestPoint.y - (edgeMid.y - run.start_pos_y),
-              newRotation: newRotation
-            };
-          }
-        }
-        
-        // Check other edges if we haven't found a good back edge snap
-        if (!bestSnapResult.shouldSnap) {
-          for (const edge of edges) {
-            if (edge.name === 'bottom') continue; // Skip back edge as we already checked it
-            
-            const edgeMid = {
-              x: (edge.start.x + edge.end.x) / 2,
-              y: (edge.start.y + edge.end.y) / 2
-            };
-            
-            const { distance, closestPoint } = pointToLineDistance(edgeMid, p1, p2);
-            
-            if (distance < minDistance) {
-              // Calculate wall angle
-              const wallAngle = Math.atan2(
-                p2.y - p1.y,
-                p2.x - p1.x
-              ) * (180 / Math.PI);
-              
-              // Calculate appropriate rotation based on which edge we're snapping
-              let newRotation;
-              
-              if (edge.name === 'top') {
-                newRotation = wallAngle; // Top edge parallel to wall
-              } else if (edge.name === 'left' || edge.name === 'right') {
-                // Side edges should be perpendicular to wall
-                newRotation = (wallAngle + 90) % 360;
-              }
-              
-              minDistance = distance;
-              bestSnapResult = {
-                shouldSnap: true,
-                snapEdge: edge.name,
-                snapWall: { roomId: room.id, wallIndex },
-                newX: closestPoint.x - (edgeMid.x - run.start_pos_x),
-                newY: closestPoint.y - (edgeMid.y - run.start_pos_y),
-                newRotation: newRotation
-              };
-            }
-          }
         }
       }
     }
-    
-    return bestSnapResult;
-  };
+  }
+  
+  return bestSnap;
+};
 
   const findBestWallSnap = (run: CabinetRun): {
     shouldSnap: boolean;
@@ -1995,121 +1981,124 @@ const handleForceUpdateSecondaryRooms = () => {
     return bestSnap;
   };
 
-  const applyRunSnap = (
-    runId: string | null, 
-    mousePos: Point, 
-    currentRun?: CabinetRun
-  ): void => {
-    // If no run is provided, create a temporary one at mouse position
-    const tempRun: CabinetRun = currentRun || {
-      id: 'temp',
-      start_pos_x: mousePos.x,
-      start_pos_y: mousePos.y,
-      length: DEFAULT_RUN_LENGTH,
-      depth: DEFAULT_RUN_DEPTH,
-      rotation_z: 0,
-      type: newRunType,
-      start_type: 'Open',
-      end_type: 'Open',
-      top_filler: false,
-      is_island: false
-    };
-    
-    // Find best wall to snap to
-    const snapResult = findBestWallSnap(tempRun);
-    
-    if (snapResult.shouldSnap) {
-      if (runId) {
-        // Update existing run
-        setCabinetRuns(prev => prev.map(run => {
-          if (run.id === runId) {
-            return {
-              ...run,
-              start_pos_x: snapResult.newX!,
-              start_pos_y: snapResult.newY!,
-              rotation_z: snapResult.newRotation!,
-              snapInfo: {
-                isSnapped: true,
-                snappedEdge: snapResult.snapEdge,
-                snappedToWall: snapResult.snapWall
-              }
-            };
-          }
-          return run;
-        }));
-      } else {
-        // Create new run with snap - use integer ID
-        // Find the highest existing run ID and increment by 1
-        const highestId = cabinetRuns.length > 0 
-          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-          : 0;
-        const newRunId = (highestId + 1).toString();
-        
-        const newRun: CabinetRun = {
-          id: newRunId,
-          start_pos_x: snapResult.newX!,
-          start_pos_y: snapResult.newY!,
-          length: DEFAULT_RUN_LENGTH,
-          depth: DEFAULT_RUN_DEPTH,
-          rotation_z: snapResult.newRotation!,
-          type: newRunType,
-          start_type: 'Open',
-          end_type: 'Open',
-          top_filler: false,
-          is_island: false,
-          snapInfo: {
-            isSnapped: true,
-            snappedEdge: snapResult.snapEdge,
-            snappedToWall: snapResult.snapWall
-          }
-        };
-        
-        setCabinetRuns([...cabinetRuns, newRun]);
-        setSelectedRun(newRunId);
-      }
-    } else {
-      // No snap - just update or create at mouse position
-      if (runId) {
-        setCabinetRuns(prev => prev.map(run => {
-          if (run.id === runId) {
-            return {
-              ...run,
-              start_pos_x: mousePos.x,
-              start_pos_y: mousePos.y,
-              snapInfo: undefined
-            };
-          }
-          return run;
-        }));
-      } else {
-        // Create new run without snap - use integer ID
-        // Find the highest existing run ID and increment by 1
-        const highestId = cabinetRuns.length > 0 
-          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-          : 0;
-        const newRunId = (highestId + 1).toString();
-        
-        const newRun: CabinetRun = {
-          id: newRunId,
-          start_pos_x: mousePos.x,
-          start_pos_y: mousePos.y,
-          length: DEFAULT_RUN_LENGTH,
-          depth: DEFAULT_RUN_DEPTH,
-          rotation_z: 0,
-          type: newRunType,
-          start_type: 'Open',
-          end_type: 'Open',
-          top_filler: false,
-          is_island: false
-        };
-        
-        setCabinetRuns([...cabinetRuns, newRun]);
-        setSelectedRun(newRunId);
-      }
-    }
-    
-    setIsAddingRun(false);
+  // Apply run snap (for existing runs being dragged)
+  // Fix for the applyRunSnap function
+const applyRunSnap = (
+  runId: string | null, 
+  mousePos: Point, 
+  currentRun?: CabinetRun
+): void => {
+  // For clarity: If the user clicked at mousePos, we want to place
+  // the LEFT rear corner of the cabinet at this position
+  
+  // Create a temporary run at the clicked position
+  const tempRun: CabinetRun = currentRun || {
+    id: 'temp',
+    start_pos_x: mousePos.x,  // Directly use mouse position as left rear corner
+    start_pos_y: mousePos.y,
+    length: DEFAULT_RUN_LENGTH,
+    depth: DEFAULT_RUN_DEPTH,
+    rotation_z: 0,
+    type: newRunType,
+    start_type: 'Open',
+    end_type: 'Open',
+    top_filler: false,
+    is_island: false
   };
+  
+  // Find best wall to snap to
+  const snapResult = findBestWallSnap(tempRun);
+  
+  if (snapResult.shouldSnap) {
+    if (runId) {
+      // Update existing run
+      setCabinetRuns(prev => prev.map(run => {
+        if (run.id === runId) {
+          return {
+            ...run,
+            start_pos_x: snapResult.newX!,
+            start_pos_y: snapResult.newY!,
+            rotation_z: snapResult.newRotation!,
+            snapInfo: {
+              isSnapped: true,
+              snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+              snappedToWall: snapResult.snapWall
+            }
+          };
+        }
+        return run;
+      }));
+    } else {
+      // Create new run with snap
+      const highestId = cabinetRuns.length > 0 
+        ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+        : 0;
+      const newRunId = (highestId + 1).toString();
+      
+      const newRun: CabinetRun = {
+        id: newRunId,
+        start_pos_x: snapResult.newX!,
+        start_pos_y: snapResult.newY!,
+        length: DEFAULT_RUN_LENGTH,
+        depth: DEFAULT_RUN_DEPTH,
+        rotation_z: snapResult.newRotation!,
+        type: newRunType,
+        start_type: 'Open',
+        end_type: 'Open',
+        top_filler: false,
+        is_island: false,
+        snapInfo: {
+          isSnapped: true,
+          snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+          snappedToWall: snapResult.snapWall
+        }
+      };
+      
+      setCabinetRuns([...cabinetRuns, newRun]);
+      setSelectedRun(newRunId);
+    }
+  } else {
+    // No snap - just update or create at mouse position
+    if (runId) {
+      setCabinetRuns(prev => prev.map(run => {
+        if (run.id === runId) {
+          return {
+            ...run,
+            start_pos_x: mousePos.x,
+            start_pos_y: mousePos.y,
+            snapInfo: undefined
+          };
+        }
+        return run;
+      }));
+    } else {
+      // Create new run without snap
+      const highestId = cabinetRuns.length > 0 
+        ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+        : 0;
+      const newRunId = (highestId + 1).toString();
+      
+      const newRun: CabinetRun = {
+        id: newRunId,
+        start_pos_x: mousePos.x,
+        start_pos_y: mousePos.y,
+        length: DEFAULT_RUN_LENGTH,
+        depth: DEFAULT_RUN_DEPTH,
+        rotation_z: currentRun?.rotation_z || 0,
+        type: newRunType,
+        start_type: 'Open',
+        end_type: 'Open',
+        top_filler: false,
+        is_island: false
+      };
+      
+      setCabinetRuns([...cabinetRuns, newRun]);
+      setSelectedRun(newRunId);
+    }
+  }
+  
+  setIsAddingRun(false);
+};
   
   // Calculate the snap position for a run during placement or dragging
   const calculateRunSnapPosition = (
@@ -2118,6 +2107,7 @@ const handleForceUpdateSecondaryRooms = () => {
     runLength: number = DEFAULT_RUN_LENGTH, 
     runDepth: number = DEFAULT_RUN_DEPTH
   ): RunSnapResult => {
+    // mousePos is now directly the bottom-left corner of the back wall
     // Create a temporary run at the mouse position
     const tempRun: CabinetRun = {
       id: 'temp',
@@ -2148,25 +2138,36 @@ const startAddingRun = () => {
   setNewRunType('Base'); // Default to Base type
 };
 
-// Create a new cabinet run at the specified position
+// Function to create a new cabinet run at the specified position
 const createCabinetRun = (position: Point) => {
   // Check if we should snap to a wall
   const snapResult = calculateRunSnapPosition(position, 0);
   
   // Create new cabinet run with a unique integer ID
-  // Find the highest existing run ID and increment by 1
   const highestId = cabinetRuns.length > 0 
     ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
     : 0;
   const newRunId = (highestId + 1).toString();
   
+  // Get position from snap result or mouse position
+  let posX = snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x;
+  let posY = snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y;
+  const rotation = snapResult.shouldSnap && snapResult.newRotation !== undefined ? snapResult.newRotation : 0;
+  
+  // ADJUSTMENT: Since the position currently refers to right rear corner but should be left rear,
+  // we need to adjust the position based on the run length and rotation
+  const rotationRad = (rotation * Math.PI) / 180;
+  posX = posX - DEFAULT_RUN_LENGTH * Math.cos(rotationRad); // Adjust X position
+  posY = posY - DEFAULT_RUN_LENGTH * Math.sin(rotationRad); // Adjust Y position
+  
+  // Create new run with the position now correctly representing the LEFT rear corner
   const newRun: CabinetRun = {
     id: newRunId,
-    start_pos_x: snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x,
-    start_pos_y: snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y,
+    start_pos_x: posX,
+    start_pos_y: posY,
     length: DEFAULT_RUN_LENGTH,
     depth: DEFAULT_RUN_DEPTH,
-    rotation_z: snapResult.shouldSnap && snapResult.newRotation !== undefined ? snapResult.newRotation : 0,
+    rotation_z: rotation,
     type: newRunType,
     start_type: 'Open',
     end_type: 'Open',
@@ -2174,7 +2175,7 @@ const createCabinetRun = (position: Point) => {
     is_island: false,
     snapInfo: snapResult.shouldSnap ? {
       isSnapped: true,
-      snappedEdge: snapResult.snapEdge,
+      snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
       snappedToWall: snapResult.snapWall
     } : undefined
   };
@@ -2695,7 +2696,7 @@ const exportRoomData = () => {
         const dx = mousePos.x - draggedRun.startX;
         const dy = mousePos.y - draggedRun.startY;
         
-        // New position without snapping
+        // New position without snapping - direct update to LEFT rear corner
         const newPosX = run.start_pos_x + dx;
         const newPosY = run.start_pos_y + dy;
         
@@ -2764,7 +2765,7 @@ const exportRoomData = () => {
         return;
       }
       
-      // Store the selected point for use when drag ends
+      // Handle dragging points
       if (selectedPoint) {
         lastDraggedPointRef.current = { ...selectedPoint };
         
@@ -2914,7 +2915,7 @@ const exportRoomData = () => {
           setTimeout(updateAttachedPoints, 0);
         }
       } else if (selectedWindowPoint) {
-        // Window point movement logic - keep this unchanged
+        // Window point movement logic
         const room = rooms.find(r => r.id === selectedWindowPoint.roomId);
         if (!room) return;
     
@@ -2953,7 +2954,7 @@ const exportRoomData = () => {
         
         setTimeout(updateAttachedPoints, 0);
       } else if (selectedDoorPoint) {
-        // Door point movement logic - keep this unchanged
+        // Door point movement logic
         const room = rooms.find(r => r.id === selectedDoorPoint.roomId);
         if (!room) return;
     
@@ -2993,7 +2994,7 @@ const exportRoomData = () => {
         setTimeout(updateAttachedPoints, 0);
       }
     } else if (isPanning && lastPanPosition) {
-      // Panning logic - unchanged
+      // Panning logic
       const currentPos = getScreenMousePosition(e);
       const dx = currentPos.x - lastPanPosition.x;
       const dy = currentPos.y - lastPanPosition.y;
@@ -3734,7 +3735,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     setContextMenu(null);
   };
   
-
   const drawRoom = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -3904,11 +3904,15 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       // Save canvas state
       ctx.save();
       
-      // Convert position to screen coordinates
-      const screenPos = worldToScreen(run.start_pos_x, run.start_pos_y);
+      // Get corners based on the bottom-left back wall reference point
+      const corners = calculateRunCorners(run);
       
-      // Transform for rotation
-      ctx.translate(screenPos.x, screenPos.y);
+      // Convert from bottom-left of back wall to screen coordinates
+      const bottomLeft = worldToScreen(run.start_pos_x, run.start_pos_y);
+      const topLeft = worldToScreen(corners.topLeft.x, corners.topLeft.y);
+      
+      // Transform for rotation around bottom-left of back wall
+      ctx.translate(bottomLeft.x, bottomLeft.y);
       ctx.rotate((run.rotation_z * Math.PI) / 180);
       
       // Calculate dimensions in screen coordinates
@@ -3922,16 +3926,14 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       if (run.type === 'Upper') {
         // Upper cabinets with shadow
         ctx.fillStyle = 'rgba(220, 220, 230, 0.2)';
-        ctx.fillRect(0, -visualHeight, width, visualHeight);
-      } else {
-        // Base cabinets with shadow
-        ctx.fillStyle = 'rgba(200, 200, 210, 0.2)';
-        ctx.fillRect(0, 0, width, visualHeight * 0.1); // Small shadow for depth
+        ctx.fillRect(0, -visualHeight, width, 0); // From back wall to ceiling
       }
       
-      // Draw main run rectangle
+      // Draw main cabinet body - starting from bottom-left of back wall
+      // For base cabinets, draw the rectangle from bottom-left moving right and up
+      // For upper cabinets, draw from back wall bottom-left
       ctx.beginPath();
-      ctx.rect(0, 0, width, height);
+      ctx.rect(0, 0, width, -height); // Negative height to draw upward from back wall
       
       // Fill with color based on type
       if (run.type === 'Base') {
@@ -3950,7 +3952,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       if (hoverRun === run.id) {
         // Draw a subtle highlight around the run
         ctx.beginPath();
-        ctx.rect(-5, -5, width + 10, height + 10);
+        ctx.rect(-5, 5, width + 10, -(height + 10));
         ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; // Light blue highlight
         ctx.lineWidth = 2;
         ctx.setLineDash([2, 2]); // Dotted outline
@@ -3958,10 +3960,10 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.setLineDash([]); // Reset dash pattern
       }
   
-      // Draw back wall with dashed line
+      // Draw back wall with dashed line (already at bottom-left of back wall)
       ctx.beginPath();
-      ctx.moveTo(0, height);
-      ctx.lineTo(width, height);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(width, 0);
       ctx.setLineDash([5, 3]); // Set dashed line pattern
       ctx.strokeStyle = '#4B5563'; // Dark gray for back wall
       ctx.lineWidth = 2;
@@ -3973,7 +3975,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         // Draw wall indicator at start
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.lineTo(0, height);
+        ctx.lineTo(0, -height);
         ctx.strokeStyle = '#6b7280';
         ctx.lineWidth = 4;
         ctx.stroke();
@@ -3983,7 +3985,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         // Draw wall indicator at end
         ctx.beginPath();
         ctx.moveTo(width, 0);
-        ctx.lineTo(width, height);
+        ctx.lineTo(width, -height);
         ctx.strokeStyle = '#6b7280';
         ctx.lineWidth = 4;
         ctx.stroke();
@@ -3992,7 +3994,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       // Draw island indicator if applicable
       if (run.is_island) {
         const centerX = width / 2;
-        const centerY = height / 2;
+        const centerY = -height / 2;
         const radius = Math.min(width, height) * 0.1;
         
         ctx.beginPath();
@@ -4004,8 +4006,8 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       // Draw top filler indicator if applicable
       if (run.top_filler) {
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(width, 0);
+        ctx.moveTo(0, -height);
+        ctx.lineTo(width, -height);
         ctx.strokeStyle = '#059669'; // Green for top filler
         ctx.lineWidth = 4;
         ctx.stroke();
@@ -4018,16 +4020,16 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.beginPath();
         if (edgeName === 'left') {
           ctx.moveTo(0, 0);
-          ctx.lineTo(0, height);
+          ctx.lineTo(0, -height);
         } else if (edgeName === 'right') {
           ctx.moveTo(width, 0);
-          ctx.lineTo(width, height);
+          ctx.lineTo(width, -height);
         } else if (edgeName === 'top') {
+          ctx.moveTo(0, -height);
+          ctx.lineTo(width, -height);
+        } else if (edgeName === 'bottom') {
           ctx.moveTo(0, 0);
           ctx.lineTo(width, 0);
-        } else if (edgeName === 'bottom') {
-          ctx.moveTo(0, height);
-          ctx.lineTo(width, height);
         }
         
         ctx.strokeStyle = '#10b981'; // Green for snap indicator
@@ -4042,11 +4044,11 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.textBaseline = 'middle';
       
       // Draw run ID
-      const runNumber = run.id; // Changed from: const runNumber = run.id.split('-')[1] || '';
-      ctx.fillText(`Run ${runNumber} (${run.type})`, width / 2, height / 2);
+      const runNumber = run.id;
+      ctx.fillText(`Run ${runNumber} (${run.type})`, width / 2, -height / 2);
       
       // Draw dimensions below
-      ctx.fillText(`${Math.round(run.length)}mm × ${Math.round(run.depth)}mm`, width / 2, height / 2 + 16);
+      ctx.fillText(`${Math.round(run.length)}mm × ${Math.round(run.depth)}mm`, width / 2, -height / 2 + 16);
       
       // Restore canvas state
       ctx.restore();
@@ -4591,7 +4593,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             <option value="">Select Cabinet Run</option>
             {cabinetRuns.map(run => (
               <option key={run.id} value={run.id}>
-                Run {run.id} ({run.type})
+                Run {run.id.split('-')[1]} ({run.type})
               </option>
             ))}
           </select>
