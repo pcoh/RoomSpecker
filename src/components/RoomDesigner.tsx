@@ -2440,6 +2440,18 @@ const exportRoomData = () => {
       const run = cabinetRuns.find(r => r.id === runId);
       if (run) {
         setSelectedRun(runId);
+        
+        // IMPORTANT: Remove snapInfo immediately when starting to drag a run
+        // This forces runs to be unsnapped as soon as you start dragging
+        if (run.snapInfo?.isSnapped) {
+          setCabinetRuns(prevRuns => prevRuns.map(r => 
+            r.id === runId 
+              ? { ...r, snapInfo: undefined }
+              : r
+          ));
+        }
+        
+        // Then start the normal drag
         setDraggedRun({
           id: runId,
           startX: mousePos.x,
@@ -2758,60 +2770,34 @@ const exportRoomData = () => {
         const dx = mousePos.x - draggedRun.startX;
         const dy = mousePos.y - draggedRun.startY;
         
-        // New position without snapping - direct update to LEFT rear corner
+        // Calculate absolute drag distance
+        const dragDistance = Math.sqrt(dx * dx + dy * dy);
+        
+        // New position based on mouse movement
         const newPosX = run.start_pos_x + dx;
         const newPosY = run.start_pos_y + dy;
         
-        // Create temporary run at the new position to check for snapping
-        const tempRun: CabinetRun = {
-          ...run,
-          start_pos_x: newPosX,
-          start_pos_y: newPosY
-        };
-        
-        // Check for snapping if enabled
-        if (runSnapSettings.enabled) {
-          const snapResult = findBestWallSnapForRun(tempRun);
-          
-          if (snapResult.shouldSnap && snapResult.newX !== undefined && snapResult.newY !== undefined) {
-            // Update existing run
-            setCabinetRuns(prevRuns => prevRuns.map(r => 
-              r.id === draggedRun.id 
-                ? {
-                    ...r,
-                    start_pos_x: snapResult.newX!,
-                    start_pos_y: snapResult.newY!,
-                    rotation_z: snapResult.newRotation !== undefined ? snapResult.newRotation : r.rotation_z,
-                    snapInfo: {
-                      isSnapped: true,
-                      snappedEdge: 'rear', // Always reference the rear edge for clarity
-                      snappedToWall: snapResult.snapWall
-                    }
-                  }
-                : r
-            ));
-          } else {
-            // No snap - just update position
-            setCabinetRuns(prevRuns => prevRuns.map(r => 
-              r.id === draggedRun.id 
-                ? {
-                    ...r,
-                    start_pos_x: newPosX,
-                    start_pos_y: newPosY,
-                    snapInfo: undefined
-                  }
-                : r
-            ));
-          }
-        } else {
-          // Snapping disabled - just update position
+        // If run is snapped and drag distance is significant, unsnap it
+        if (run.snapInfo?.isSnapped && dragDistance > 10 / scale) {
           setCabinetRuns(prevRuns => prevRuns.map(r => 
             r.id === draggedRun.id 
               ? {
                   ...r,
                   start_pos_x: newPosX,
                   start_pos_y: newPosY,
-                  snapInfo: undefined
+                  snapInfo: undefined // Remove snap info to unsnap
+                }
+              : r
+          ));
+        } 
+        // If run is not snapped, just update its position (no snap check)
+        else if (!run.snapInfo?.isSnapped) {
+          setCabinetRuns(prevRuns => prevRuns.map(r => 
+            r.id === draggedRun.id 
+              ? {
+                  ...r,
+                  start_pos_x: newPosX,
+                  start_pos_y: newPosY
                 }
               : r
           ));
@@ -3046,7 +3032,7 @@ const exportRoomData = () => {
             door.endPoint = closestPoint;
             door.width = Math.sqrt(
               Math.pow(closestPoint.x - door.startPoint.x, 2) + 
-              Math.pow(door.startPoint.y - closestPoint.y, 2)
+              Math.pow(door.startPoint.y - door.startPoint.y, 2)
             );
           }
     
@@ -3214,16 +3200,36 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
 };
   
 const handleCanvasMouseUp = () => {
-  // Clean up dragging state for cabinet runs
+  // If we were dragging a run, check for snapping when the drag ends
   if (draggedRun) {
     const run = cabinetRuns.find(r => r.id === draggedRun.id);
-    if (run && run.snapInfo) {
-      // Apply final snap adjustments if needed
+    if (run && !run.snapInfo?.isSnapped && runSnapSettings.enabled) {
+      // Check for snapping at the current position
+      const snapResult = findBestWallSnapForRun(run);
+      
+      if (snapResult.shouldSnap && snapResult.newX !== undefined && snapResult.newY !== undefined) {
+        // Apply snap
+        setCabinetRuns(prevRuns => prevRuns.map(r => 
+          r.id === draggedRun.id 
+            ? {
+                ...r,
+                start_pos_x: snapResult.newX!,
+                start_pos_y: snapResult.newY!,
+                rotation_z: snapResult.newRotation !== undefined ? snapResult.newRotation : r.rotation_z,
+                snapInfo: {
+                  isSnapped: true,
+                  snappedEdge: 'rear',
+                  snappedToWall: snapResult.snapWall
+                }
+              }
+            : r
+        ));
+      }
     }
-    setDraggedRun(null);
   }
-  
-  // Existing cleanup code
+
+  // Clean up dragging state
+  setDraggedRun(null);
   setIsDragging(false);
   setSelectedPoint(null);
   setSelectedDoorPoint(null);
