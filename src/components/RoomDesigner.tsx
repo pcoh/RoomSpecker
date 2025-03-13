@@ -4007,16 +4007,33 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.stroke();
   
       // Add a subtle visual cue if the run is being hovered over
+      // if (hoverRun === run.id) {
+      //   // Draw a subtle highlight around the run
+      //   ctx.beginPath();
+      //   ctx.rect(-5, 5, width + 10, -(height + 10));
+      //   ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; // Light blue highlight
+      //   ctx.lineWidth = 2;
+      //   ctx.setLineDash([2, 2]); // Dotted outline
+      //   ctx.stroke();
+      //   ctx.setLineDash([]); // Reset dash pattern
+      // }
+
       if (hoverRun === run.id) {
-        // Draw a subtle highlight around the run
+        // Instead of drawing a dotted outline, fill with a highlight color
         ctx.beginPath();
-        ctx.rect(-5, 5, width + 10, -(height + 10));
-        ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; // Light blue highlight
-        ctx.lineWidth = 2;
-        ctx.setLineDash([2, 2]); // Dotted outline
-        ctx.stroke();
-        ctx.setLineDash([]); // Reset dash pattern
+        ctx.rect(0, 0, width, -height); // Use the same dimensions as the cabinet
+        
+        // Choose a highlight color based on the run type
+        if (run.type === 'Base') {
+          ctx.fillStyle = 'rgba(251, 191, 36, 0.4)'; // Semi-transparent amber for base cabinets
+        } else {
+          ctx.fillStyle = 'rgba(96, 165, 250, 0.4)'; // Semi-transparent blue for upper cabinets
+        }
+        
+        // Fill with the highlight color
+        ctx.fill();
       }
+
   
       // Draw rear wall with dashed line (already at bottom-left of rear wall)
       ctx.beginPath();
@@ -4106,7 +4123,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
 
   useEffect(() => {
     drawRoom();
-  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun]);
+  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun, hoverRun]);
 
   return (
     <div className="space-y-8">
