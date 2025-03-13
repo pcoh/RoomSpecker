@@ -1539,13 +1539,13 @@ const handleForceUpdateSecondaryRooms = () => {
     };
     
     const frontLeft = {
-      x: rearLeft.x - run.depth * sin,
-      y: rearLeft.y + run.depth * cos
+      x: rearLeft.x + run.depth * sin,
+      y: rearLeft.y - run.depth * cos
     };
     
     const frontRight = {
-      x: rearRight.x - run.depth * sin,
-      y: rearRight.y + run.depth * cos
+      x: rearRight.x + run.depth * sin,
+      y: rearRight.y - run.depth * cos
     };
     
     return { 
@@ -1754,87 +1754,86 @@ const handleForceUpdateSecondaryRooms = () => {
   };
   
   // Find the best wall to snap a run to
-  // Fix for the findBestWallSnapForRun function
-const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
-  // Don't try to snap if there are no rooms
-  if (!rooms.some(r => r.isComplete)) {
-    return { shouldSnap: false };
-  }
-  
-  // Calculate current corners of the run using the new LEFT rear corner model
-  const corners = calculateRunCorners(run);
-  
-  // Get all edges of the run
-  const edges = calculateRunEdges(corners);
-  
-  // Track the best snap found
-  let bestSnap = {
-    shouldSnap: false,
-    snapDistance: SNAP_DISTANCE_MM / scale,
-    snapEdge: undefined as 'left' | 'right' | 'top' | 'bottom' | undefined,
-    snapWall: { roomId: '', wallIndex: -1 },
-    newX: run.start_pos_x,
-    newY: run.start_pos_y,
-    newRotation: run.rotation_z
-  };
-  
-  // Check all completed rooms
-  for (const room of rooms) {
-    if (!room.isComplete || room.points.length < 3) continue;
+  const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
+    // Don't try to snap if there are no rooms
+    if (!rooms.some(r => r.isComplete)) {
+      return { shouldSnap: false };
+    }
     
-    // Check each wall in the room
-    for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
-      const wallStart = room.points[wallIndex];
-      const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+    // Calculate current corners of the run using the new LEFT rear corner model
+    const corners = calculateRunCorners(run);
+    
+    // Get all edges of the run
+    const edges = calculateRunEdges(corners);
+    
+    // Track the best snap found
+    let bestSnap = {
+      shouldSnap: false,
+      snapDistance: SNAP_DISTANCE_MM / scale,
+      snapEdge: undefined as 'left' | 'right' | 'top' | 'bottom' | undefined,
+      snapWall: { roomId: '', wallIndex: -1 },
+      newX: run.start_pos_x,
+      newY: run.start_pos_y,
+      newRotation: run.rotation_z
+    };
+    
+    // Check all completed rooms
+    for (const room of rooms) {
+      if (!room.isComplete || room.points.length < 3) continue;
       
-      // Check each edge of the cabinet run against this wall
-      for (const edge of edges) {
-        // Use the midpoint of the edge for initial distance check
-        const edgeMidpoint = {
-          x: (edge.start.x + edge.end.x) / 2,
-          y: (edge.start.y + edge.end.y) / 2
-        };
+      // Check each wall in the room
+      for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
+        const wallStart = room.points[wallIndex];
+        const wallEnd = room.points[(wallIndex + 1) % room.points.length];
         
-        // Calculate distance from edge midpoint to wall
-        const { distance, closestPoint } = distancePointToWall(
-          edgeMidpoint, wallStart, wallEnd
-        );
-        
-        // If this is closer than our current best and within threshold
-        if (distance < bestSnap.snapDistance) {
-          // Calculate an alignment rotation
-          const newRotation = calculateWallAlignment(
-            wallStart, wallEnd, run.rotation_z
+        // Check each edge of the cabinet run against this wall
+        for (const edge of edges) {
+          // Use the midpoint of the edge for initial distance check
+          const edgeMidpoint = {
+            x: (edge.start.x + edge.end.x) / 2,
+            y: (edge.start.y + edge.end.y) / 2
+          };
+          
+          // Calculate distance from edge midpoint to wall
+          const { distance, closestPoint } = distancePointToWall(
+            edgeMidpoint, wallStart, wallEnd
           );
           
-          // Calculate how much we need to move to snap
-          const dx = closestPoint.x - edgeMidpoint.x;
-          const dy = closestPoint.y - edgeMidpoint.y;
-          
-          // Ensure edge.type is a valid snap edge type
-          const edgeType = edge.type as string;
-          const validEdgeType = (edgeType === 'left' || edgeType === 'right' || 
-                                edgeType === 'top' || edgeType === 'bottom') 
-                                ? edgeType as 'left' | 'right' | 'top' | 'bottom' 
-                                : undefined;
-          
-          // Update best snap - with position directly representing the LEFT rear corner
-          bestSnap = {
-            shouldSnap: true,
-            snapDistance: distance,
-            snapEdge: validEdgeType,
-            snapWall: { roomId: room.id, wallIndex },
-            newX: run.start_pos_x + dx,
-            newY: run.start_pos_y + dy,
-            newRotation
-          };
+          // If this is closer than our current best and within threshold
+          if (distance < bestSnap.snapDistance) {
+            // Calculate an alignment rotation
+            const newRotation = calculateWallAlignment(
+              wallStart, wallEnd, run.rotation_z
+            );
+            
+            // Calculate how much we need to move to snap
+            const dx = closestPoint.x - edgeMidpoint.x;
+            const dy = closestPoint.y - edgeMidpoint.y;
+            
+            // Ensure edge.type is a valid snap edge type
+            const edgeType = edge.type as string;
+            const validEdgeType = (edgeType === 'left' || edgeType === 'right' || 
+                                  edgeType === 'top' || edgeType === 'bottom') 
+                                  ? edgeType as 'left' | 'right' | 'top' | 'bottom' 
+                                  : undefined;
+            
+            // Update best snap - with position directly representing the LEFT rear corner
+            bestSnap = {
+              shouldSnap: true,
+              snapDistance: distance,
+              snapEdge: validEdgeType,
+              snapWall: { roomId: room.id, wallIndex },
+              newX: run.start_pos_x + dx,
+              newY: run.start_pos_y + dy,
+              newRotation
+            };
+          }
         }
       }
     }
-  }
-  
-  return bestSnap;
-};
+    
+    return bestSnap;
+  };
 
   const findBestWallSnap = (run: CabinetRun): {
     shouldSnap: boolean;
@@ -1982,123 +1981,122 @@ const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
   };
 
   // Apply run snap (for existing runs being dragged)
-  // Fix for the applyRunSnap function
-const applyRunSnap = (
-  runId: string | null, 
-  mousePos: Point, 
-  currentRun?: CabinetRun
-): void => {
-  // For clarity: If the user clicked at mousePos, we want to place
-  // the LEFT rear corner of the cabinet at this position
-  
-  // Create a temporary run at the clicked position
-  const tempRun: CabinetRun = currentRun || {
-    id: 'temp',
-    start_pos_x: mousePos.x,  // Directly use mouse position as left rear corner
-    start_pos_y: mousePos.y,
-    length: DEFAULT_RUN_LENGTH,
-    depth: DEFAULT_RUN_DEPTH,
-    rotation_z: 0,
-    type: newRunType,
-    start_type: 'Open',
-    end_type: 'Open',
-    top_filler: false,
-    is_island: false
+  const applyRunSnap = (
+    runId: string | null, 
+    mousePos: Point, 
+    currentRun?: CabinetRun
+  ): void => {
+    // For clarity: If the user clicked at mousePos, we want to place
+    // the LEFT rear corner of the cabinet at this position
+    
+    // Create a temporary run at the clicked position
+    const tempRun: CabinetRun = currentRun || {
+      id: 'temp',
+      start_pos_x: mousePos.x,  // Directly use mouse position as left rear corner
+      start_pos_y: mousePos.y,
+      length: DEFAULT_RUN_LENGTH,
+      depth: DEFAULT_RUN_DEPTH,
+      rotation_z: 0,
+      type: newRunType,
+      start_type: 'Open',
+      end_type: 'Open',
+      top_filler: false,
+      is_island: false
+    };
+    
+    // Find best wall to snap to
+    const snapResult = findBestWallSnap(tempRun);
+    
+    if (snapResult.shouldSnap) {
+      if (runId) {
+        // Update existing run
+        setCabinetRuns(prev => prev.map(run => {
+          if (run.id === runId) {
+            return {
+              ...run,
+              start_pos_x: snapResult.newX!,
+              start_pos_y: snapResult.newY!,
+              rotation_z: snapResult.newRotation!,
+              snapInfo: {
+                isSnapped: true,
+                snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+                snappedToWall: snapResult.snapWall
+              }
+            };
+          }
+          return run;
+        }));
+      } else {
+        // Create new run with snap
+        const highestId = cabinetRuns.length > 0 
+          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+          : 0;
+        const newRunId = (highestId + 1).toString();
+        
+        const newRun: CabinetRun = {
+          id: newRunId,
+          start_pos_x: snapResult.newX!,
+          start_pos_y: snapResult.newY!,
+          length: DEFAULT_RUN_LENGTH,
+          depth: DEFAULT_RUN_DEPTH,
+          rotation_z: snapResult.newRotation!,
+          type: newRunType,
+          start_type: 'Open',
+          end_type: 'Open',
+          top_filler: false,
+          is_island: false,
+          snapInfo: {
+            isSnapped: true,
+            snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+            snappedToWall: snapResult.snapWall
+          }
+        };
+        
+        setCabinetRuns([...cabinetRuns, newRun]);
+        setSelectedRun(newRunId);
+      }
+    } else {
+      // No snap - just update or create at mouse position
+      if (runId) {
+        setCabinetRuns(prev => prev.map(run => {
+          if (run.id === runId) {
+            return {
+              ...run,
+              start_pos_x: mousePos.x,
+              start_pos_y: mousePos.y,
+              snapInfo: undefined
+            };
+          }
+          return run;
+        }));
+      } else {
+        // Create new run without snap
+        const highestId = cabinetRuns.length > 0 
+          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+          : 0;
+        const newRunId = (highestId + 1).toString();
+        
+        const newRun: CabinetRun = {
+          id: newRunId,
+          start_pos_x: mousePos.x,
+          start_pos_y: mousePos.y,
+          length: DEFAULT_RUN_LENGTH,
+          depth: DEFAULT_RUN_DEPTH,
+          rotation_z: currentRun?.rotation_z || 0,
+          type: newRunType,
+          start_type: 'Open',
+          end_type: 'Open',
+          top_filler: false,
+          is_island: false
+        };
+        
+        setCabinetRuns([...cabinetRuns, newRun]);
+        setSelectedRun(newRunId);
+      }
+    }
+    
+    setIsAddingRun(false);
   };
-  
-  // Find best wall to snap to
-  const snapResult = findBestWallSnap(tempRun);
-  
-  if (snapResult.shouldSnap) {
-    if (runId) {
-      // Update existing run
-      setCabinetRuns(prev => prev.map(run => {
-        if (run.id === runId) {
-          return {
-            ...run,
-            start_pos_x: snapResult.newX!,
-            start_pos_y: snapResult.newY!,
-            rotation_z: snapResult.newRotation!,
-            snapInfo: {
-              isSnapped: true,
-              snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
-              snappedToWall: snapResult.snapWall
-            }
-          };
-        }
-        return run;
-      }));
-    } else {
-      // Create new run with snap
-      const highestId = cabinetRuns.length > 0 
-        ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-        : 0;
-      const newRunId = (highestId + 1).toString();
-      
-      const newRun: CabinetRun = {
-        id: newRunId,
-        start_pos_x: snapResult.newX!,
-        start_pos_y: snapResult.newY!,
-        length: DEFAULT_RUN_LENGTH,
-        depth: DEFAULT_RUN_DEPTH,
-        rotation_z: snapResult.newRotation!,
-        type: newRunType,
-        start_type: 'Open',
-        end_type: 'Open',
-        top_filler: false,
-        is_island: false,
-        snapInfo: {
-          isSnapped: true,
-          snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
-          snappedToWall: snapResult.snapWall
-        }
-      };
-      
-      setCabinetRuns([...cabinetRuns, newRun]);
-      setSelectedRun(newRunId);
-    }
-  } else {
-    // No snap - just update or create at mouse position
-    if (runId) {
-      setCabinetRuns(prev => prev.map(run => {
-        if (run.id === runId) {
-          return {
-            ...run,
-            start_pos_x: mousePos.x,
-            start_pos_y: mousePos.y,
-            snapInfo: undefined
-          };
-        }
-        return run;
-      }));
-    } else {
-      // Create new run without snap
-      const highestId = cabinetRuns.length > 0 
-        ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-        : 0;
-      const newRunId = (highestId + 1).toString();
-      
-      const newRun: CabinetRun = {
-        id: newRunId,
-        start_pos_x: mousePos.x,
-        start_pos_y: mousePos.y,
-        length: DEFAULT_RUN_LENGTH,
-        depth: DEFAULT_RUN_DEPTH,
-        rotation_z: currentRun?.rotation_z || 0,
-        type: newRunType,
-        start_type: 'Open',
-        end_type: 'Open',
-        top_filler: false,
-        is_island: false
-      };
-      
-      setCabinetRuns([...cabinetRuns, newRun]);
-      setSelectedRun(newRunId);
-    }
-  }
-  
-  setIsAddingRun(false);
-};
   
   // Calculate the snap position for a run during placement or dragging
   const calculateRunSnapPosition = (
@@ -2107,7 +2105,7 @@ const applyRunSnap = (
     runLength: number = DEFAULT_RUN_LENGTH, 
     runDepth: number = DEFAULT_RUN_DEPTH
   ): RunSnapResult => {
-    // mousePos is now directly the bottom-left corner of the back wall
+    // mousePos is directly the left rear corner of the cabinet
     // Create a temporary run at the mouse position
     const tempRun: CabinetRun = {
       id: 'temp',
@@ -2153,12 +2151,6 @@ const createCabinetRun = (position: Point) => {
   let posX = snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x;
   let posY = snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y;
   const rotation = snapResult.shouldSnap && snapResult.newRotation !== undefined ? snapResult.newRotation : 0;
-  
-  // ADJUSTMENT: Since the position currently refers to right rear corner but should be left rear,
-  // we need to adjust the position based on the run length and rotation
-  const rotationRad = (rotation * Math.PI) / 180;
-  posX = posX - DEFAULT_RUN_LENGTH * Math.cos(rotationRad); // Adjust X position
-  posY = posY - DEFAULT_RUN_LENGTH * Math.sin(rotationRad); // Adjust Y position
   
   // Create new run with the position now correctly representing the LEFT rear corner
   const newRun: CabinetRun = {
@@ -3907,17 +3899,15 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       // Get corners based on the bottom-left back wall reference point
       const corners = calculateRunCorners(run);
       
-      // Convert from bottom-left of back wall to screen coordinates
       const bottomLeft = worldToScreen(run.start_pos_x, run.start_pos_y);
-      const topLeft = worldToScreen(corners.topLeft.x, corners.topLeft.y);
-      
-      // Transform for rotation around bottom-left of back wall
+    
+      // Transform for rotation around left rear corner
       ctx.translate(bottomLeft.x, bottomLeft.y);
-      ctx.rotate((run.rotation_z * Math.PI) / 180);
+      ctx.rotate((-run.rotation_z * Math.PI) / 180);
       
       // Calculate dimensions in screen coordinates
       const width = run.length * scale;
-      const height = run.depth * scale;
+      const height = -run.depth * scale;
       
       // Calculate visual height for 3D effect based on run type
       const visualHeight = run.type === 'Base' ? DEFAULT_BASE_HEIGHT * scale : DEFAULT_UPPER_HEIGHT * scale;
@@ -4616,7 +4606,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                 {/* Position properties */}
                 <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    X Position (mm)
+                    X Position (Left Rear Corner) (mm)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <input
@@ -4629,7 +4619,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                 </tr>
                 <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Y Position (mm)
+                    Y Position (Left Rear Corner) (mm)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <input
