@@ -83,7 +83,7 @@ interface CabinetRun {
   // Optional snap status for visual feedback only
   snapInfo?: {
     isSnapped: boolean;
-    snappedEdge?: 'front' | 'right' | 'rear' | 'left';
+    snappedEdge?: 'rear';
     snappedToWall?: {
       roomId: string;
       wallIndex: number;
@@ -141,7 +141,7 @@ interface RunSnapResult {
   newX?: number;
   newY?: number;
   newRotation?: number;
-  snapEdge?: 'left' | 'right' | 'top' | 'bottom';
+  snapEdge?: 'left' | 'right' | 'front' | 'rear';
   snapWall?: {
     roomId: string;
     wallIndex: number;
@@ -223,7 +223,7 @@ const RoomDesigner: React.FC = () => {
   const [runSnapSettings, setRunSnapSettings] = useState<RunSnapSettings>({
     enabled: true,
     threshold: 50, // 50mm snap threshold
-    rotationSnap: 90  // Snap to 90-degree increments
+    rotationSnap: 0  // No snap rotation increment (was 90)
   });
   const [hoverRun, setHoverRun] = useState<string | null>(null);
   
@@ -1558,10 +1558,7 @@ const handleForceUpdateSecondaryRooms = () => {
 
   const calculateRunEdges = (corners: RunCorners): Array<{start: Point, end: Point, type: string}> => {
     return [
-      { start: corners.frontLeft, end: corners.frontRight, type: 'front' },
-      { start: corners.frontRight, end: corners.rearRight, type: 'right' },
-      { start: corners.rearRight, end: corners.rearLeft, type: 'rear' }, // This is the rear edge
-      { start: corners.rearLeft, end: corners.frontLeft, type: 'left' }
+      { start: corners.rearRight, end: corners.rearLeft, type: 'rear' }, // Only include the rear edge
     ];
   };
 
@@ -1583,41 +1580,8 @@ const handleForceUpdateSecondaryRooms = () => {
     // For rear of cabinet to align with wall, we need to rotate 180 degrees from wall direction
     const alignedAngle = (normalizedWallAngle + 180) % 360;
     
-    // For side of cabinet to align with wall, offset by 90 or 270 degrees
-    const sideAlignedAngles = [
-      (normalizedWallAngle + 90) % 360,
-      (normalizedWallAngle + 270) % 360
-    ];
-    
-    // Combine all potential alignment angles
-    const potentialAngles = [normalizedWallAngle, alignedAngle, ...sideAlignedAngles];
-    
-    // Find the closest angle to current rotation
-    let closestAngle = potentialAngles[0];
-    let minDifference = 360;
-    
-    for (const angle of potentialAngles) {
-      // Calculate angle difference (considering the circular nature)
-      let diff = Math.abs(angle - runRotation);
-      if (diff > 180) diff = 360 - diff;
-      
-      if (diff < minDifference) {
-        minDifference = diff;
-        closestAngle = angle;
-      }
-    }
-    
-    // If the difference is within threshold, snap to the closest angle
-    if (minDifference <= SNAP_ANGLE_THRESHOLD) {
-      return closestAngle;
-    }
-    
-    // Otherwise use the current rotation but snap to smaller increments if configured
-    if (SNAP_ROTATION_INCREMENT > 0) {
-      return Math.round(runRotation / SNAP_ROTATION_INCREMENT) * SNAP_ROTATION_INCREMENT;
-    }
-    
-    return runRotation;
+    // Return the aligned angle (no snapping to other orientations)
+    return alignedAngle;
   };
   
   // Check if a point is inside a cabinet run
@@ -1763,14 +1727,14 @@ const handleForceUpdateSecondaryRooms = () => {
     // Calculate current corners of the run using the new LEFT rear corner model
     const corners = calculateRunCorners(run);
     
-    // Get all edges of the run
+    // Get only the rear edge of the run
     const edges = calculateRunEdges(corners);
     
     // Track the best snap found
     let bestSnap = {
       shouldSnap: false,
       snapDistance: SNAP_DISTANCE_MM / scale,
-      snapEdge: undefined as 'left' | 'right' | 'top' | 'bottom' | undefined,
+      snapEdge: 'rear' as 'rear' | undefined,
       snapWall: { roomId: '', wallIndex: -1 },
       newX: run.start_pos_x,
       newY: run.start_pos_y,
@@ -1786,48 +1750,41 @@ const handleForceUpdateSecondaryRooms = () => {
         const wallStart = room.points[wallIndex];
         const wallEnd = room.points[(wallIndex + 1) % room.points.length];
         
-        // Check each edge of the cabinet run against this wall
-        for (const edge of edges) {
-          // Use the midpoint of the edge for initial distance check
-          const edgeMidpoint = {
-            x: (edge.start.x + edge.end.x) / 2,
-            y: (edge.start.y + edge.end.y) / 2
-          };
-          
-          // Calculate distance from edge midpoint to wall
-          const { distance, closestPoint } = distancePointToWall(
-            edgeMidpoint, wallStart, wallEnd
+        // Use the rear edge only
+        const edge = edges[0];
+        
+        // Use the midpoint of the edge for initial distance check
+        const edgeMidpoint = {
+          x: (edge.start.x + edge.end.x) / 2,
+          y: (edge.start.y + edge.end.y) / 2
+        };
+        
+        // Calculate distance from edge midpoint to wall
+        const { distance, closestPoint } = distancePointToWall(
+          edgeMidpoint, wallStart, wallEnd
+        );
+        
+        // If this is closer than our current best and within threshold
+        if (distance < bestSnap.snapDistance) {
+          // Calculate an alignment rotation
+          const newRotation = calculateWallAlignment(
+            wallStart, wallEnd, run.rotation_z
           );
           
-          // If this is closer than our current best and within threshold
-          if (distance < bestSnap.snapDistance) {
-            // Calculate an alignment rotation
-            const newRotation = calculateWallAlignment(
-              wallStart, wallEnd, run.rotation_z
-            );
-            
-            // Calculate how much we need to move to snap
-            const dx = closestPoint.x - edgeMidpoint.x;
-            const dy = closestPoint.y - edgeMidpoint.y;
-            
-            // Ensure edge.type is a valid snap edge type
-            const edgeType = edge.type as string;
-            const validEdgeType = (edgeType === 'left' || edgeType === 'right' || 
-                                  edgeType === 'top' || edgeType === 'bottom') 
-                                  ? edgeType as 'left' | 'right' | 'top' | 'bottom' 
-                                  : undefined;
-            
-            // Update best snap - with position directly representing the LEFT rear corner
-            bestSnap = {
-              shouldSnap: true,
-              snapDistance: distance,
-              snapEdge: validEdgeType,
-              snapWall: { roomId: room.id, wallIndex },
-              newX: run.start_pos_x + dx,
-              newY: run.start_pos_y + dy,
-              newRotation
-            };
-          }
+          // Calculate how much we need to move to snap
+          const dx = closestPoint.x - edgeMidpoint.x;
+          const dy = closestPoint.y - edgeMidpoint.y;
+          
+          // Update best snap
+          bestSnap = {
+            shouldSnap: true,
+            snapDistance: distance,
+            snapEdge: 'rear',
+            snapWall: { roomId: room.id, wallIndex },
+            newX: run.start_pos_x + dx,
+            newY: run.start_pos_y + dy,
+            newRotation
+          };
         }
       }
     }
@@ -1855,7 +1812,7 @@ const handleForceUpdateSecondaryRooms = () => {
     // Calculate current corners of the run
     const corners = calculateRunCorners(run);
     
-    // Get all edges of the run
+    // Get only the rear edge of the run
     const edges = calculateRunEdges(corners);
     
     // Track the best snap found
@@ -1878,101 +1835,41 @@ const handleForceUpdateSecondaryRooms = () => {
         const wallStart = room.points[wallIndex];
         const wallEnd = room.points[(wallIndex + 1) % room.points.length];
         
-        // Check each edge of the cabinet run against this wall
-        for (const edge of edges) {
-          // Use the midpoint of the edge for initial distance check
-          const edgeMidpoint = {
-            x: (edge.start.x + edge.end.x) / 2,
-            y: (edge.start.y + edge.end.y) / 2
-          };
-          
-          // Calculate distance from edge midpoint to wall
-          const { distance, closestPoint } = distancePointToWall(
-            edgeMidpoint, wallStart, wallEnd
+        // Get the rear edge of the cabinet
+        const edge = edges[0];
+        
+        // Use the midpoint of the edge for initial distance check
+        const edgeMidpoint = {
+          x: (edge.start.x + edge.end.x) / 2,
+          y: (edge.start.y + edge.end.y) / 2
+        };
+        
+        // Calculate distance from edge midpoint to wall
+        const { distance, closestPoint } = distancePointToWall(
+          edgeMidpoint, wallStart, wallEnd
+        );
+        
+        // If this is closer than our current best and within threshold
+        if (distance < bestSnap.snapDistance) {
+          // Calculate an alignment rotation - will align rear edge to wall
+          const newRotation = calculateWallAlignment(
+            wallStart, wallEnd, run.rotation_z
           );
           
-          // If this is closer than our current best and within threshold
-          if (distance < bestSnap.snapDistance) {
-            // Calculate an alignment rotation
-            const newRotation = calculateWallAlignment(
-              wallStart, wallEnd, run.rotation_z
-            );
-            
-            // Calculate how much we need to move to snap
-            const dx = closestPoint.x - edgeMidpoint.x;
-            const dy = closestPoint.y - edgeMidpoint.y;
-            
-            // Update best snap
-            bestSnap = {
-              shouldSnap: true,
-              snapDistance: distance,
-              snapEdge: edge.type,
-              snapWall: { roomId: room.id, wallIndex },
-              newX: run.start_pos_x + dx,
-              newY: run.start_pos_y + dy,
-              newRotation
-            };
-          }
-        }
-      }
-    }
-    
-    // Handle corner cases - if we're close to two perpendicular walls
-    if (bestSnap.shouldSnap) {
-      // We can add additional logic here to detect and handle corner cases
-      // This would involve finding a second close wall that's perpendicular
-      // to the best wall we found, and adjusting position accordingly
-      
-      const cornerSnapThreshold = SNAP_DISTANCE_MM * 2 / scale;
-      
-      // Create a temporary run with the new position and rotation
-      const tempRun: CabinetRun = {
-        ...run,
-        start_pos_x: bestSnap.newX!,
-        start_pos_y: bestSnap.newY!,
-        rotation_z: bestSnap.newRotation!
-      };
-      
-      // Calculate new corners after the initial snap
-      const newCorners = calculateRunCorners(tempRun);
-      
-      // Check all corners against all walls
-      for (const cornerKey in newCorners) {
-        const corner = newCorners[cornerKey as keyof RunCorners];
-        
-        // Skip checking against the wall we already snapped to
-        for (const room of rooms) {
-          if (!room.isComplete) continue;
+          // Calculate how much we need to move to snap
+          const dx = closestPoint.x - edgeMidpoint.x;
+          const dy = closestPoint.y - edgeMidpoint.y;
           
-          for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
-            // Skip the wall we already snapped to
-            if (room.id === bestSnap.snapWall!.roomId && 
-                wallIndex === bestSnap.snapWall!.wallIndex) {
-              continue;
-            }
-            
-            const wallStart = room.points[wallIndex];
-            const wallEnd = room.points[(wallIndex + 1) % room.points.length];
-            
-            // Check if this corner is close to this wall
-            const { distance, closestPoint } = distancePointToWall(
-              corner, wallStart, wallEnd
-            );
-            
-            if (distance < cornerSnapThreshold) {
-              // We found a second wall to snap to - this is a corner case
-              // Calculate the vector from corner to closest point on wall
-              const dx = closestPoint.x - corner.x;
-              const dy = closestPoint.y - corner.y;
-              
-              // Adjust the best snap position to account for this corner snap
-              bestSnap.newX! += dx;
-              bestSnap.newY! += dy;
-              
-              // We only handle one corner snap (first one found)
-              break;
-            }
-          }
+          // Update best snap
+          bestSnap = {
+            shouldSnap: true,
+            snapDistance: distance,
+            snapEdge: 'rear',
+            snapWall: { roomId: room.id, wallIndex },
+            newX: run.start_pos_x + dx,
+            newY: run.start_pos_y + dy,
+            newRotation
+          };
         }
       }
     }
@@ -2019,7 +1916,7 @@ const handleForceUpdateSecondaryRooms = () => {
               rotation_z: snapResult.newRotation!,
               snapInfo: {
                 isSnapped: true,
-                snappedEdge: snapResult.snapEdge as 'front' | 'right' | 'rear' | 'left' | undefined,
+                snappedEdge: snapResult.snapEdge as 'rear' | undefined,
                 snappedToWall: snapResult.snapWall
               }
             };
@@ -2035,21 +1932,16 @@ const handleForceUpdateSecondaryRooms = () => {
         
         const newRun: CabinetRun = {
           id: newRunId,
-          start_pos_x: snapResult.newX!,
-          start_pos_y: snapResult.newY!,
+          start_pos_x: mousePos.x,
+          start_pos_y: mousePos.y,
           length: DEFAULT_RUN_LENGTH,
           depth: DEFAULT_RUN_DEPTH,
-          rotation_z: snapResult.newRotation!,
+          rotation_z: currentRun?.rotation_z || 0, // Use exact rotation from current run, no snapping
           type: newRunType,
           start_type: 'Open',
           end_type: 'Open',
           top_filler: false,
-          is_island: false,
-          snapInfo: {
-            isSnapped: true,
-            snappedEdge: snapResult.snapEdge as 'front' | 'right' | 'rear' | 'left' | undefined,
-            snappedToWall: snapResult.snapWall
-          }
+          is_island: false
         };
         
         setCabinetRuns([...cabinetRuns, newRun]);
@@ -2167,7 +2059,7 @@ const createCabinetRun = (position: Point) => {
     is_island: false,
     snapInfo: snapResult.shouldSnap ? {
       isSnapped: true,
-      snappedEdge: snapResult.snapEdge as 'front' | 'right' | 'rear' | 'left' | undefined,
+      snappedEdge: snapResult.snapEdge as 'rear'  | undefined,
       snappedToWall: snapResult.snapWall
     } : undefined
   };
@@ -4006,19 +3898,20 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         const edgeName = run.snapInfo.snappedEdge;
         
         ctx.beginPath();
-        if (edgeName === 'left') {
+        if (edgeName === 'rear') {
           ctx.moveTo(0, 0);
           ctx.lineTo(0, -height);
-        } else if (edgeName === 'right') {
-          ctx.moveTo(width, 0);
-          ctx.lineTo(width, -height);
-        } else if (edgeName === 'top') {
-          ctx.moveTo(0, -height);
-          ctx.lineTo(width, -height);
-        } else if (edgeName === 'bottom') {
-          ctx.moveTo(0, 0);
-          ctx.lineTo(width, 0);
-        }
+        } 
+        // else if (edgeName === 'right') {
+        //   ctx.moveTo(width, 0);
+        //   ctx.lineTo(width, -height);
+        // } else if (edgeName === 'top') {
+        //   ctx.moveTo(0, -height);
+        //   ctx.lineTo(width, -height);
+        // } else if (edgeName === 'bottom') {
+        //   ctx.moveTo(0, 0);
+        //   ctx.lineTo(width, 0);
+        // }
         
         ctx.strokeStyle = '#10b981'; // Green for snap indicator
         ctx.lineWidth = 3;
