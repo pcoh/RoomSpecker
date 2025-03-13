@@ -83,7 +83,7 @@ interface CabinetRun {
   // Optional snap status for visual feedback only
   snapInfo?: {
     isSnapped: boolean;
-    snappedEdge?: 'left' | 'right' | 'top' | 'bottom';
+    snappedEdge?: 'front' | 'right' | 'rear' | 'left';
     snappedToWall?: {
       roomId: string;
       wallIndex: number;
@@ -108,10 +108,10 @@ interface RunSelection {
 
 // Type for run corner points - helps with drawing and hit detection
 interface RunCorners {
-  topLeft: Point;
-  topRight: Point;
-  bottomRight: Point;
-  bottomLeft: Point;
+  frontLeft: Point;
+  frontRight: Point;
+  rearRight: Point;
+  rearLeft: Point;
 }
 
 // Run snapping settings
@@ -1549,19 +1549,19 @@ const handleForceUpdateSecondaryRooms = () => {
     };
     
     return { 
-      topLeft: frontLeft, 
-      topRight: frontRight, 
-      bottomRight: rearRight, 
-      bottomLeft: rearLeft 
+      frontLeft: frontLeft, 
+      frontRight: frontRight, 
+      rearRight: rearRight, 
+      rearLeft: rearLeft 
     };
   };
 
   const calculateRunEdges = (corners: RunCorners): Array<{start: Point, end: Point, type: string}> => {
     return [
-      { start: corners.topLeft, end: corners.topRight, type: 'front' },
-      { start: corners.topRight, end: corners.bottomRight, type: 'right' },
-      { start: corners.bottomRight, end: corners.bottomLeft, type: 'back' },
-      { start: corners.bottomLeft, end: corners.topLeft, type: 'left' }
+      { start: corners.frontLeft, end: corners.frontRight, type: 'front' },
+      { start: corners.frontRight, end: corners.rearRight, type: 'right' },
+      { start: corners.rearRight, end: corners.rearLeft, type: 'rear' }, // This is the rear edge
+      { start: corners.rearLeft, end: corners.frontLeft, type: 'left' }
     ];
   };
 
@@ -1580,7 +1580,7 @@ const handleForceUpdateSecondaryRooms = () => {
     // Normalize to 0-360
     const normalizedWallAngle = (wallAngle + 360) % 360;
     
-    // For back of cabinet to align with wall, we need to rotate 180 degrees from wall direction
+    // For rear of cabinet to align with wall, we need to rotate 180 degrees from wall direction
     const alignedAngle = (normalizedWallAngle + 180) % 360;
     
     // For side of cabinet to align with wall, offset by 90 or 270 degrees
@@ -1741,7 +1741,7 @@ const handleForceUpdateSecondaryRooms = () => {
         return {
           shouldSnap: true,
           newRotation: newRotation,
-          snapEdge: isParallel ? 'left' : 'bottom', // This is simplified - would need more logic to determine actual edge
+          snapEdge: isParallel ? 'left' : 'rear', // This is simplified - would need more logic to determine actual edge
           snapWall: {
             roomId: room.id,
             wallIndex: wallIndex
@@ -2019,7 +2019,7 @@ const handleForceUpdateSecondaryRooms = () => {
               rotation_z: snapResult.newRotation!,
               snapInfo: {
                 isSnapped: true,
-                snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+                snappedEdge: snapResult.snapEdge as 'front' | 'right' | 'rear' | 'left' | undefined,
                 snappedToWall: snapResult.snapWall
               }
             };
@@ -2047,7 +2047,7 @@ const handleForceUpdateSecondaryRooms = () => {
           is_island: false,
           snapInfo: {
             isSnapped: true,
-            snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+            snappedEdge: snapResult.snapEdge as 'front' | 'right' | 'rear' | 'left' | undefined,
             snappedToWall: snapResult.snapWall
           }
         };
@@ -2105,7 +2105,7 @@ const handleForceUpdateSecondaryRooms = () => {
     runLength: number = DEFAULT_RUN_LENGTH, 
     runDepth: number = DEFAULT_RUN_DEPTH
   ): RunSnapResult => {
-    // mousePos is directly the left rear corner of the cabinet
+    // mousePos is directly the rear left corner of the cabinet
     // Create a temporary run at the mouse position
     const tempRun: CabinetRun = {
       id: 'temp',
@@ -2147,12 +2147,12 @@ const createCabinetRun = (position: Point) => {
     : 0;
   const newRunId = (highestId + 1).toString();
   
-  // Get position from snap result or mouse position
+  // Get position from snap result or mouse position for the rear-left corner
   let posX = snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x;
   let posY = snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y;
   const rotation = snapResult.shouldSnap && snapResult.newRotation !== undefined ? snapResult.newRotation : 0;
   
-  // Create new run with the position now correctly representing the LEFT rear corner
+  // Create new run with the position representing the rear left corner
   const newRun: CabinetRun = {
     id: newRunId,
     start_pos_x: posX,
@@ -2167,7 +2167,7 @@ const createCabinetRun = (position: Point) => {
     is_island: false,
     snapInfo: snapResult.shouldSnap ? {
       isSnapped: true,
-      snappedEdge: snapResult.snapEdge as 'left' | 'right' | 'top' | 'bottom' | undefined,
+      snappedEdge: snapResult.snapEdge as 'front' | 'right' | 'rear' | 'left' | undefined,
       snappedToWall: snapResult.snapWall
     } : undefined
   };
@@ -2704,7 +2704,7 @@ const exportRoomData = () => {
           const snapResult = findBestWallSnapForRun(tempRun);
           
           if (snapResult.shouldSnap && snapResult.newX !== undefined && snapResult.newY !== undefined) {
-            // Update the run with snapped position and rotation
+            // Update existing run
             setCabinetRuns(prevRuns => prevRuns.map(r => 
               r.id === draggedRun.id 
                 ? {
@@ -2714,7 +2714,7 @@ const exportRoomData = () => {
                     rotation_z: snapResult.newRotation !== undefined ? snapResult.newRotation : r.rotation_z,
                     snapInfo: {
                       isSnapped: true,
-                      snappedEdge: snapResult.snapEdge,
+                      snappedEdge: 'rear', // Always reference the rear edge for clarity
                       snappedToWall: snapResult.snapWall
                     }
                   }
@@ -3896,13 +3896,13 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       // Save canvas state
       ctx.save();
       
-      // Get corners based on the bottom-left back wall reference point
+      // Get corners based on the rear-left reference point
       const corners = calculateRunCorners(run);
       
-      const bottomLeft = worldToScreen(run.start_pos_x, run.start_pos_y);
+      const rearLeft = worldToScreen(run.start_pos_x, run.start_pos_y);
     
       // Transform for rotation around left rear corner
-      ctx.translate(bottomLeft.x, bottomLeft.y);
+      ctx.translate(rearLeft.x, rearLeft.y);
       ctx.rotate((-run.rotation_z * Math.PI) / 180);
       
       // Calculate dimensions in screen coordinates
@@ -3916,14 +3916,12 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       if (run.type === 'Upper') {
         // Upper cabinets with shadow
         ctx.fillStyle = 'rgba(220, 220, 230, 0.2)';
-        ctx.fillRect(0, -visualHeight, width, 0); // From back wall to ceiling
+        ctx.fillRect(0, -visualHeight, width, 0); // From rear wall to ceiling
       }
       
-      // Draw main cabinet body - starting from bottom-left of back wall
-      // For base cabinets, draw the rectangle from bottom-left moving right and up
-      // For upper cabinets, draw from back wall bottom-left
+      // Draw main cabinet body - starting from rear-left corner
       ctx.beginPath();
-      ctx.rect(0, 0, width, -height); // Negative height to draw upward from back wall
+      ctx.rect(0, 0, width, -height); // Negative height to draw upward from rear wall
       
       // Fill with color based on type
       if (run.type === 'Base') {
@@ -3950,12 +3948,12 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.setLineDash([]); // Reset dash pattern
       }
   
-      // Draw back wall with dashed line (already at bottom-left of back wall)
+      // Draw rear wall with dashed line (already at bottom-left of rear wall)
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(width, 0);
       ctx.setLineDash([5, 3]); // Set dashed line pattern
-      ctx.strokeStyle = '#4B5563'; // Dark gray for back wall
+      ctx.strokeStyle = '#4B5563'; // Dark gray for rear wall
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.setLineDash([]); // Reset dash pattern for subsequent drawing
@@ -4606,7 +4604,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                 {/* Position properties */}
                 <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    X Position (Left Rear Corner) (mm)
+                    X Position (Rear Left Corner) (mm)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <input
@@ -4619,7 +4617,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                 </tr>
                 <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Y Position (Left Rear Corner) (mm)
+                    Y Position (Rear Left Corner) (mm)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <input
