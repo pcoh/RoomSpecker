@@ -4005,18 +4005,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.strokeStyle = selectedRun === run.id ? '#dc2626' : run.type === 'Base' ? '#d97706' : '#3b82f6';
       ctx.lineWidth = selectedRun === run.id ? 3 : 2;
       ctx.stroke();
-  
-      // Add a subtle visual cue if the run is being hovered over
-      // if (hoverRun === run.id) {
-      //   // Draw a subtle highlight around the run
-      //   ctx.beginPath();
-      //   ctx.rect(-5, 5, width + 10, -(height + 10));
-      //   ctx.strokeStyle = 'rgba(59, 130, 246, 0.5)'; // Light blue highlight
-      //   ctx.lineWidth = 2;
-      //   ctx.setLineDash([2, 2]); // Dotted outline
-      //   ctx.stroke();
-      //   ctx.setLineDash([]); // Reset dash pattern
-      // }
 
       if (hoverRun === run.id) {
         // Instead of drawing a dotted outline, fill with a highlight color
@@ -4034,7 +4022,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.fill();
       }
 
-  
       // Draw rear wall with dashed line (already at bottom-left of rear wall)
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -4114,7 +4101,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.fillText(`Run ${runNumber} (${run.type})`, width / 2, -height / 2);
       
       // Draw dimensions below
-      ctx.fillText(`${Math.round(run.length)}mm × ${Math.round(run.depth)}mm`, width / 2, -height / 2 + 16);
+      // ctx.fillText(`${Math.round(run.length)}mm × ${Math.round(run.depth)}mm`, width / 2, -height / 2 + 16);
       
       // Restore canvas state
       ctx.restore();
