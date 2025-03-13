@@ -1649,8 +1649,8 @@ const calculateWallAlignment = (
     return (
       rotatedX >= -hitAreaExpansion && 
       rotatedX <= run.length + hitAreaExpansion && 
-      rotatedY >= -hitAreaExpansion && 
-      rotatedY <= run.depth + hitAreaExpansion
+      rotatedY >= - (run.depth + hitAreaExpansion) && 
+      rotatedY <= hitAreaExpansion
     );
   };
   
