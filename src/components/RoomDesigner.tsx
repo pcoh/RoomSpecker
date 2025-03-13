@@ -4078,18 +4078,8 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.beginPath();
         if (edgeName === 'rear') {
           ctx.moveTo(0, 0);
-          ctx.lineTo(0, -height);
+          ctx.lineTo(width, 0 );
         } 
-        // else if (edgeName === 'right') {
-        //   ctx.moveTo(width, 0);
-        //   ctx.lineTo(width, -height);
-        // } else if (edgeName === 'top') {
-        //   ctx.moveTo(0, -height);
-        //   ctx.lineTo(width, -height);
-        // } else if (edgeName === 'bottom') {
-        //   ctx.moveTo(0, 0);
-        //   ctx.lineTo(width, 0);
-        // }
         
         ctx.strokeStyle = '#10b981'; // Green for snap indicator
         ctx.lineWidth = 3;
