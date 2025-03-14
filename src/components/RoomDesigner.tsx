@@ -143,6 +143,16 @@ interface RunSnapResult {
   };
 }
 
+interface Cabinet {
+  id: string;
+  cabinet_run_id: string;
+  cabinet_type: string;
+  cabinet_width: number;
+  hinge_right: boolean;
+  material_doors: string;
+  position: number; // Position from left in mm
+}
+
 const POINT_RADIUS = 5;
 const DOOR_POINT_RADIUS = 4;
 const WINDOW_POINT_RADIUS = 4;
@@ -223,6 +233,14 @@ const RoomDesigner: React.FC = () => {
   });
   const [hoverRun, setHoverRun] = useState<string | null>(null);
   const [customDepthRuns, setCustomDepthRuns] = useState<{ [key: string]: boolean }>({});
+  const [cabinets, setCabinets] = useState<Cabinet[]>([]);
+  const [selectedCabinet, setSelectedCabinet] = useState<string | null>(null);
+  const [isAddingCabinet, setIsAddingCabinet] = useState(false);
+  const [newCabinetType, setNewCabinetType] = useState<string>('');
+  const [newCabinetWidth, setNewCabinetWidth] = useState<number>(600); // Default width
+  const [newCabinetHingeRight, setNewCabinetHingeRight] = useState<boolean>(true);
+  const [newCabinetMaterial, setNewCabinetMaterial] = useState<string>('WhiteOak_SlipMatch');
+  
 
 
   // Initialize main room
@@ -2461,6 +2479,137 @@ const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => 
   }));
 };
 
+// Get available cabinet types based on run type
+const getAvailableCabinetTypes = (runType: 'Base' | 'Upper'): string[] => {
+  if (runType === 'Base') {
+    return ['Base - 2-Drawer', 'Base - 3-Drawer', 'Base - 4-Drawer'];
+  } else {
+    return ['Wall - Leaf Door & Shelves', 'Wall - Double Leaf Door & Shelves', 'Wall - Bookcase'];
+  }
+};
+
+// Add a cabinet to a run
+const addCabinetToRun = (runId: string) => {
+  const run = cabinetRuns.find(r => r.id === runId);
+  if (!run) return;
+
+  // Calculate position for new cabinet (sum of widths of existing cabinets in this run)
+  const existingCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
+  const position = existingCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
+  
+  // Create a new cabinet
+  const highestId = cabinets.length > 0 
+    ? Math.max(...cabinets.map(cab => parseInt(cab.id.substring(3)))) // Assuming IDs like "cab1", "cab2"
+    : 0;
+  const newCabinetId = `cab${highestId + 1}`;
+  
+  const newCabinet: Cabinet = {
+    id: newCabinetId,
+    cabinet_run_id: runId,
+    cabinet_type: newCabinetType || getAvailableCabinetTypes(run.type)[0],
+    cabinet_width: newCabinetWidth,
+    hinge_right: newCabinetHingeRight,
+    material_doors: newCabinetMaterial,
+    position: position
+  };
+  
+  // Add the cabinet
+  setCabinets([...cabinets, newCabinet]);
+  
+  // Update run length to match total cabinet width
+  updateRunLength(runId);
+  
+  // Reset new cabinet form
+  setIsAddingCabinet(false);
+};
+
+// Update the length of a run based on its cabinets
+const updateRunLength = (runId: string) => {
+  const runCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
+  const totalWidth = runCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
+  
+  // Only update if cabinets exist and the calculated width is greater than zero
+  if (runCabinets.length > 0 && totalWidth > 0) {
+    setCabinetRuns(prevRuns => prevRuns.map(run => 
+      run.id === runId ? { ...run, length: totalWidth } : run
+    ));
+  }
+};
+
+// Remove a cabinet
+const removeCabinet = (cabinetId: string) => {
+  const cabinet = cabinets.find(c => c.id === cabinetId);
+  if (!cabinet) return;
+  
+  const runId = cabinet.cabinet_run_id;
+  
+  // Remove the cabinet
+  setCabinets(cabinets.filter(c => c.id !== cabinetId));
+  
+  // Recalculate positions for remaining cabinets in the run
+  setTimeout(() => {
+    const remainingRunCabinets = cabinets
+      .filter(c => c.cabinet_run_id === runId && c.id !== cabinetId)
+      .sort((a, b) => a.position - b.position);
+    
+    let currentPosition = 0;
+    const updatedCabinets = cabinets.map(c => {
+      if (c.cabinet_run_id !== runId || c.id === cabinetId) return c;
+      
+      const updatedCabinet = { ...c, position: currentPosition };
+      currentPosition += c.cabinet_width;
+      return updatedCabinet;
+    });
+    
+    setCabinets(updatedCabinets);
+    
+    // Update the run length
+    updateRunLength(runId);
+  }, 0);
+  
+  if (selectedCabinet === cabinetId) {
+    setSelectedCabinet(null);
+  }
+};
+
+// Update cabinet properties
+const updateCabinetProperty = (cabinetId: string, property: keyof Cabinet, value: any) => {
+  const cabinet = cabinets.find(c => c.id === cabinetId);
+  if (!cabinet) return;
+  
+  const runId = cabinet.cabinet_run_id;
+  
+  setCabinets(prevCabinets => {
+    const updatedCabinets = prevCabinets.map(c => 
+      c.id === cabinetId ? { ...c, [property]: value } : c
+    );
+    
+    // If width changed, we need to recalculate positions
+    if (property === 'cabinet_width') {
+      const runCabinets = updatedCabinets
+        .filter(c => c.cabinet_run_id === runId)
+        .sort((a, b) => a.position - b.position);
+      
+      let currentPosition = 0;
+      return updatedCabinets.map(c => {
+        if (c.cabinet_run_id !== runId) return c;
+        
+        const pos = currentPosition;
+        currentPosition += c.cabinet_width;
+        return { ...c, position: pos };
+      });
+    }
+    
+    return updatedCabinets;
+  });
+  
+  // Update run length if width changed
+  if (property === 'cabinet_width') {
+    setTimeout(() => updateRunLength(runId), 0);
+  }
+};
+
+
 const exportRoomData = () => {
   // Create the export data structure directly from the existing room data
   const exportData = rooms.map(room => {
@@ -2499,7 +2648,7 @@ const exportRoomData = () => {
         wallIndices: room.windows.map(window => window.wallIndex),
         widths: room.windows.map(window => Math.round(window.width)),
         heights: room.windows.map(window => Math.round(window.height)),
-        sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
+        sillHeights: window.windows.map(window => Math.round(window.sillHeight)),
         positions: room.windows.map(window => Math.round(window.position))
       }
     };
@@ -2528,11 +2677,25 @@ const exportRoomData = () => {
     };
   });
 
-  // Additional metadata with cabinet runs included
+  // Add cabinet data to the export
+  const cabinetData = cabinets.map(cabinet => {
+    return {
+      id: cabinet.id,
+      cabinet_run_id: cabinet.cabinet_run_id,
+      cabinet_type: cabinet.cabinet_type,
+      cabinet_width: Math.round(cabinet.cabinet_width),
+      hinge_right: cabinet.hinge_right,
+      material_doors: cabinet.material_doors,
+      position: Math.round(cabinet.position)
+    };
+  });
+
+  // Additional metadata with cabinet runs and cabinets included
   const exportObject = {
     projectData: {
       rooms: exportData,
       cabinetRuns: cabinetRunData,
+      cabinets: cabinetData,
       exportDate: new Date().toISOString()
     }
   };
@@ -2624,6 +2787,22 @@ const exportRoomData = () => {
         });
         setIsDragging(true);
         e.stopPropagation(); // Prevent this event from triggering other handlers
+        return;
+      }
+    }
+    
+    // Check for cabinets - after checking for runs but before other items
+    if (!runId && !isAddingRun) {
+      // Find cabinet under cursor
+      const cabinetId = findCabinetAtPosition(mousePos);
+      if (cabinetId) {
+        setSelectedCabinet(cabinetId);
+        // Find the run this cabinet belongs to and select it too
+        const cabinet = cabinets.find(c => c.id === cabinetId);
+        if (cabinet) {
+          setSelectedRun(cabinet.cabinet_run_id);
+        }
+        e.stopPropagation();
         return;
       }
     }
@@ -2765,6 +2944,44 @@ const exportRoomData = () => {
       setIsPanning(true);
       setLastPanPosition(getScreenMousePosition(e));
     }
+  };
+
+  const findCabinetAtPosition = (mousePos: Point): string | null => {
+    for (const run of cabinetRuns) {
+      // Calculate run corners and transform mouse position to run's local coordinates
+      const corners = calculateRunCorners(run);
+      
+      // Transform mouse position to run's local coordinate system
+      const rotationRad = (-run.rotation_z * Math.PI) / 180;
+      const cos = Math.cos(rotationRad);
+      const sin = Math.sin(rotationRad);
+      
+      // Translate point to run's coordinate system
+      const translatedX = mousePos.x - run.start_pos_x;
+      const translatedY = mousePos.y - run.start_pos_y;
+      
+      // Rotate point
+      const rotatedX = translatedX * cos - translatedY * sin;
+      const rotatedY = translatedX * sin + translatedY * cos;
+      
+      // Check if within run bounds
+      if (rotatedX >= 0 && rotatedX <= run.length && 
+          rotatedY >= -run.depth && rotatedY <= 0) {
+        
+        // Find cabinet at this position
+        const runCabinets = cabinets
+          .filter(c => c.cabinet_run_id === run.id)
+          .sort((a, b) => a.position - b.position);
+        
+        for (const cabinet of runCabinets) {
+          if (rotatedX >= cabinet.position && rotatedX <= cabinet.position + cabinet.cabinet_width) {
+            return cabinet.id;
+          }
+        }
+      }
+    }
+    
+    return null;
   };
   
   const getUpdatedDoorsAndWindows = (room: Room, newPoints: Point[], oldPoints: Point[]) => {
@@ -4418,8 +4635,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.stroke();
       }
       
-      // Remove the island indicator dot
-  
       // Draw top filler indicator if applicable
       if (run.top_filler) {
         ctx.beginPath();
@@ -4455,6 +4670,178 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       const runNumber = run.id;
       const typeText = run.is_island ? "Island" : run.type;
       ctx.fillText(`Run ${runNumber} (${typeText})`, width / 2, -height / 2);
+      
+      // Draw cabinets in this run
+      const runCabinets = cabinets
+        .filter(c => c.cabinet_run_id === run.id)
+        .sort((a, b) => a.position - b.position);
+      
+      if (runCabinets.length > 0) {
+        // Draw each cabinet
+        runCabinets.forEach(cabinet => {
+          const cabinetX = cabinet.position * scale;
+          const cabinetWidth = cabinet.cabinet_width * scale;
+          const cabinetDepth = height; // Use the height (negative) from the run
+          
+          // Draw cabinet outline
+          ctx.beginPath();
+          ctx.rect(cabinetX, 0, cabinetWidth, cabinetDepth);
+          ctx.fillStyle = selectedCabinet === cabinet.id 
+            ? 'rgba(252, 211, 77, 0.3)' // Amber highlight for selected cabinet
+            : cabinet.material_doors === 'WhiteOak_SlipMatch'
+              ? 'rgba(253, 230, 190, 0.6)' // Light wood color for oak
+              : 'rgba(229, 231, 235, 0.6)'; // Gray color for painted cabinets
+          ctx.fill();
+          
+          // Draw cabinet border
+          ctx.strokeStyle = selectedCabinet === cabinet.id ? '#dc2626' : '#000';
+          ctx.lineWidth = selectedCabinet === cabinet.id ? 2 : 1;
+          ctx.stroke();
+          
+          // Draw cabinet type label
+          ctx.font = '10px Arial';
+          ctx.fillStyle = '#000';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          // Create shortened label based on type
+          let shortLabel = cabinet.cabinet_type;
+          if (cabinet.cabinet_type.startsWith('Base - ')) {
+            shortLabel = cabinet.cabinet_type.replace('Base - ', 'B');
+          } else if (cabinet.cabinet_type.startsWith('Wall - ')) {
+            shortLabel = cabinet.cabinet_type.replace('Wall - ', 'W');
+          }
+          
+          // Draw the label
+          ctx.fillText(
+            shortLabel, 
+            cabinetX + cabinetWidth / 2, 
+            cabinetDepth / 2
+          );
+          
+          // Draw hinge markers if applicable
+          if (cabinet.cabinet_type.includes('Door')) {
+            const hingeX = cabinet.hinge_right ? cabinetX + cabinetWidth - 2 : cabinetX + 2;
+            
+            // Draw hinges as small circles
+            ctx.beginPath();
+            ctx.arc(hingeX, -5, 2, 0, Math.PI * 2);
+            ctx.arc(hingeX, cabinetDepth + 5, 2, 0, Math.PI * 2);
+            ctx.fillStyle = '#666';
+            ctx.fill();
+          }
+          
+          // Draw drawer lines for drawer cabinets
+          if (cabinet.cabinet_type.includes('Drawer')) {
+            const drawerCount = cabinet.cabinet_type.includes('2-Drawer') ? 2 :
+                               cabinet.cabinet_type.includes('3-Drawer') ? 3 : 
+                               cabinet.cabinet_type.includes('4-Drawer') ? 4 : 0;
+            
+            if (drawerCount > 0) {
+              ctx.strokeStyle = '#666';
+              ctx.lineWidth = 1;
+              
+              const drawerHeight = Math.abs(cabinetDepth) / drawerCount;
+              
+              for (let i = 1; i < drawerCount; i++) {
+                const y = cabinetDepth * (i / drawerCount);
+                
+                ctx.beginPath();
+                ctx.moveTo(cabinetX, y);
+                ctx.lineTo(cabinetX + cabinetWidth, y);
+                ctx.stroke();
+              }
+              
+              // Draw drawer handles
+              ctx.fillStyle = '#666';
+              for (let i = 0; i < drawerCount; i++) {
+                const handleY = cabinetDepth * ((i + 0.5) / drawerCount);
+                const handleWidth = cabinetWidth * 0.4;
+                const handleX = cabinetX + (cabinetWidth - handleWidth) / 2;
+                
+                ctx.fillRect(handleX, handleY - 1, handleWidth, 2);
+              }
+            }
+          }
+          
+          // Draw door/bookcase details
+          if (cabinet.cabinet_type.includes('Bookcase')) {
+            // Draw shelf lines
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            
+            const shelfCount = 3; // Typical number of shelves
+            const shelfSpacing = Math.abs(cabinetDepth) / (shelfCount + 1);
+            
+            for (let i = 1; i <= shelfCount; i++) {
+              const y = cabinetDepth * (i / (shelfCount + 1));
+              
+              ctx.beginPath();
+              ctx.moveTo(cabinetX, y);
+              ctx.lineTo(cabinetX + cabinetWidth, y);
+              ctx.stroke();
+            }
+          } else if (cabinet.cabinet_type.includes('Door')) {
+            // Draw door division for double leaf doors
+            if (cabinet.cabinet_type.includes('Double')) {
+              ctx.beginPath();
+              ctx.moveTo(cabinetX + cabinetWidth / 2, 0);
+              ctx.lineTo(cabinetX + cabinetWidth / 2, cabinetDepth);
+              ctx.strokeStyle = '#666';
+              ctx.lineWidth = 1;
+              ctx.stroke();
+            }
+            
+            // Draw door handles
+            ctx.fillStyle = '#666';
+            if (cabinet.cabinet_type.includes('Double')) {
+              // Two handles for double doors
+              const handleY = cabinetDepth / 2;
+              const handleSize = 3;
+              
+              // Left door handle (right side)
+              const leftHandleX = cabinet.hinge_right ? 
+                cabinetX + cabinetWidth / 2 - 5 : 
+                cabinetX + cabinetWidth / 2 - handleSize - 2;
+              
+              // Right door handle (left side)
+              const rightHandleX = cabinet.hinge_right ? 
+                cabinetX + cabinetWidth / 2 + 2 : 
+                cabinetX + cabinetWidth / 2 + 5;
+              
+              ctx.beginPath();
+              ctx.arc(leftHandleX, handleY, handleSize, 0, Math.PI * 2);
+              ctx.fill();
+              
+              ctx.beginPath();
+              ctx.arc(rightHandleX, handleY, handleSize, 0, Math.PI * 2);
+              ctx.fill();
+            } else {
+              // Single handle for single door
+              const handleY = cabinetDepth / 2;
+              const handleSize = 3;
+              const handleX = cabinet.hinge_right ? 
+                cabinetX + 10 : 
+                cabinetX + cabinetWidth - 10;
+              
+              ctx.beginPath();
+              ctx.arc(handleX, handleY, handleSize, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          
+          // Draw width label at bottom
+          ctx.font = '9px Arial';
+          ctx.fillStyle = '#444';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(
+            `${Math.round(cabinet.cabinet_width)}mm`, 
+            cabinetX + cabinetWidth / 2, 
+            0
+          );
+        });
+      }
       
       // Restore canvas state
       ctx.restore();
@@ -5023,208 +5410,377 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         </div>
 
         {selectedRun ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
-                <tr>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Property
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Value
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {/* Position properties */}
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    X Position (Rear Left Corner) (mm)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <input
-                      type="number"
-                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_x || 0)}
-                      onChange={(e) => updateRunProperty(selectedRun, 'start_pos_x', Number(e.target.value))}
-                      className="w-24 px-2 py-1 border border-gray-300 rounded"
-                    />
-                  </td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Y Position (Rear Left Corner) (mm)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <input
-                      type="number"
-                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_y || 0)}
-                      onChange={(e) => updateRunProperty(selectedRun, 'start_pos_y', Number(e.target.value))}
-                      className="w-24 px-2 py-1 border border-gray-300 rounded"
-                    />
-                  </td>
-                </tr>
-                
-                {/* Dimension properties */}
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Length (mm)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <input
-                      type="number"
-                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.length || 0)}
-                      onChange={(e) => updateRunProperty(selectedRun, 'length', Number(e.target.value))}
-                      className="w-24 px-2 py-1 border border-gray-300 rounded"
-                    />
-                  </td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Depth (mm)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div className="flex items-center gap-2">
+          <>
+            {/* Cabinet Run Properties - Keep this existing table */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead>
+                  <tr>
+                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Property
+                    </th>
+                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Value
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* Position properties */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      X Position (Rear Left Corner) (mm)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <input
                         type="number"
-                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
-                        onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
-                        disabled={!customDepthRuns[selectedRun]}
-                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${!customDepthRuns[selectedRun] ? 'bg-gray-100' : ''}`}
+                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_x || 0)}
+                        onChange={(e) => updateRunProperty(selectedRun, 'start_pos_x', Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
                       />
-                      <label className="flex items-center gap-1">
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Y Position (Rear Left Corner) (mm)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_y || 0)}
+                        onChange={(e) => updateRunProperty(selectedRun, 'start_pos_y', Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                  </tr>
+                  
+                  {/* Dimension properties */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Length (mm)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.length || 0)}
+                        onChange={(e) => updateRunProperty(selectedRun, 'length', Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                        disabled={cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0}
+                        title={cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? "Length is determined by cabinets" : ""}
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Depth (mm)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
+                          onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
+                          disabled={!customDepthRuns[selectedRun]}
+                          className={`w-24 px-2 py-1 border border-gray-300 rounded ${!customDepthRuns[selectedRun] ? 'bg-gray-100' : ''}`}
+                        />
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={customDepthRuns[selectedRun] || false}
+                            onChange={() => toggleCustomDepth(selectedRun)}
+                            className="w-4 h-4 border border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700">Custom depth</span>
+                        </label>
+                      </div>
+                    </td>
+                  </tr>
+                  
+                  {/* Rotation property */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Rotation (°)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
+                        onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                      <button 
+                        onClick={() => rotateRun(selectedRun, -90)}
+                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                        title="Rotate 90° Counter-Clockwise"
+                      >
+                        -90°
+                      </button>
+                      <button 
+                        onClick={() => rotateRun(selectedRun, 90)}
+                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                        title="Rotate 90° Clockwise"
+                      >
+                        +90°
+                      </button>
+                    </td>
+                  </tr>
+                  
+                  {/* Type properties */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Type
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <select
+                        value={cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'}
+                        onChange={(e) => handleRunTypeChange(selectedRun, e.target.value as 'Base' | 'Upper')}
+                        className="w-32 px-2 py-1 border border-gray-300 rounded"
+                      >
+                        <option value="Base">Base</option>
+                        <option value="Upper">Upper</option>
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Start Type
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <select
+                        value={cabinetRuns.find(r => r.id === selectedRun)?.start_type || 'Open'}
+                        onChange={(e) => updateRunProperty(selectedRun, 'start_type', e.target.value)}
+                        className="w-32 px-2 py-1 border border-gray-300 rounded"
+                      >
+                        <option value="Open">Open</option>
+                        <option value="Wall">Wall</option>
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      End Type
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <select
+                        value={cabinetRuns.find(r => r.id === selectedRun)?.end_type || 'Open'}
+                        onChange={(e) => updateRunProperty(selectedRun, 'end_type', e.target.value)}
+                        className="w-32 px-2 py-1 border border-gray-300 rounded"
+                      >
+                        <option value="Open">Open</option>
+                        <option value="Wall">Wall</option>
+                      </select>
+                    </td>
+                  </tr>
+                  
+                  {/* Boolean properties */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Top Filler
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="checkbox"
+                        checked={cabinetRuns.find(r => r.id === selectedRun)?.top_filler || false}
+                        onChange={() => toggleRunProperty(selectedRun, 'top_filler')}
+                        className="w-4 h-4 border border-gray-300 rounded"
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Is Island
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="checkbox"
+                        checked={cabinetRuns.find(r => r.id === selectedRun)?.is_island || false}
+                        onChange={() => toggleRunProperty(selectedRun, 'is_island')}
+                        className="w-4 h-4 border border-gray-300 rounded"
+                      />
+                    </td>
+                  </tr>
+                  
+                  {/* Actions */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Actions
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <button
+                        onClick={() => deleteRun(selectedRun)}
+                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Cabinet Management UI - Add this after the cabinet run properties table */}
+            <div className="mt-6 border-t pt-4">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-lg font-medium">Cabinets in Run {selectedRun}</h3>
+                <button
+                  onClick={() => setIsAddingCabinet(true)}
+                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  Add Cabinet
+                </button>
+              </div>
+              
+              {isAddingCabinet && (
+                <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-green-50">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex justify-between">
+                      <h4 className="font-medium text-green-800">Add New Cabinet</h4>
+                      <button
+                        onClick={() => setIsAddingCabinet(false)}
+                        className="text-green-800 hover:text-green-900"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium">Type</label>
+                        <select
+                          value={newCabinetType}
+                          onChange={(e) => setNewCabinetType(e.target.value)}
+                          className="p-2 border border-gray-300 rounded"
+                        >
+                          {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))}
+                        </select>
+                      </div>
+                      
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium">Width (mm)</label>
+                        <input
+                          type="number"
+                          value={newCabinetWidth}
+                          onChange={(e) => setNewCabinetWidth(Number(e.target.value))}
+                          className="p-2 border border-gray-300 rounded"
+                        />
+                      </div>
+                      
+                      <div className="flex flex-col gap-1">
+                        <label className="text-sm font-medium">Material</label>
+                        <select
+                          value={newCabinetMaterial}
+                          onChange={(e) => setNewCabinetMaterial(e.target.value)}
+                          className="p-2 border border-gray-300 rounded"
+                        >
+                          <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                          <option value="Paint - Gray">Paint - Gray</option>
+                        </select>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm font-medium">Hinge Right</label>
                         <input
                           type="checkbox"
-                          checked={customDepthRuns[selectedRun] || false}
-                          onChange={() => toggleCustomDepth(selectedRun)}
+                          checked={newCabinetHingeRight}
+                          onChange={(e) => setNewCabinetHingeRight(e.target.checked)}
                           className="w-4 h-4 border border-gray-300 rounded"
                         />
-                        <span className="text-sm text-gray-700">Custom depth</span>
-                      </label>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-                
-                {/* Rotation property */}
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Rotation (°)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
-                      onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
-                      className="w-24 px-2 py-1 border border-gray-300 rounded"
-                    />
-                    <button 
-                      onClick={() => rotateRun(selectedRun, -90)}
-                      className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                      title="Rotate 90° Counter-Clockwise"
-                    >
-                      -90°
-                    </button>
-                    <button 
-                      onClick={() => rotateRun(selectedRun, 90)}
-                      className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                      title="Rotate 90° Clockwise"
-                    >
-                      +90°
-                    </button>
-                  </td>
-                </tr>
-                
-                {/* Type properties */}
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Type
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <select
-                      value={cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'}
-                      onChange={(e) => updateRunProperty(selectedRun, 'type', e.target.value)}
-                      className="w-32 px-2 py-1 border border-gray-300 rounded"
-                    >
-                      <option value="Base">Base</option>
-                      <option value="Upper">Upper</option>
-                    </select>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Start Type
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <select
-                      value={cabinetRuns.find(r => r.id === selectedRun)?.start_type || 'Open'}
-                      onChange={(e) => updateRunProperty(selectedRun, 'start_type', e.target.value)}
-                      className="w-32 px-2 py-1 border border-gray-300 rounded"
-                    >
-                      <option value="Open">Open</option>
-                      <option value="Wall">Wall</option>
-                    </select>
-                  </td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    End Type
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <select
-                      value={cabinetRuns.find(r => r.id === selectedRun)?.end_type || 'Open'}
-                      onChange={(e) => updateRunProperty(selectedRun, 'end_type', e.target.value)}
-                      className="w-32 px-2 py-1 border border-gray-300 rounded"
-                    >
-                      <option value="Open">Open</option>
-                      <option value="Wall">Wall</option>
-                    </select>
-                  </td>
-                </tr>
-                
-                {/* Boolean properties */}
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Top Filler
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <input
-                      type="checkbox"
-                      checked={cabinetRuns.find(r => r.id === selectedRun)?.top_filler || false}
-                      onChange={() => toggleRunProperty(selectedRun, 'top_filler')}
-                      className="w-4 h-4 border border-gray-300 rounded"
-                    />
-                  </td>
-                </tr>
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Is Island
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <input
-                      type="checkbox"
-                      checked={cabinetRuns.find(r => r.id === selectedRun)?.is_island || false}
-                      onChange={() => toggleRunProperty(selectedRun, 'is_island')}
-                      className="w-4 h-4 border border-gray-300 rounded"
-                    />
-                  </td>
-                </tr>
-                
-                {/* Actions */}
-                <tr>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Actions
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    
                     <button
-                      onClick={() => deleteRun(selectedRun)}
-                      className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                      onClick={() => addCabinetToRun(selectedRun)}
+                      className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
                     >
-                      Delete
+                      Add Cabinet
                     </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+                  </div>
+                </div>
+              )}
+              
+              {cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Width</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Hinge</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {cabinets
+                        .filter(c => c.cabinet_run_id === selectedRun)
+                        .sort((a, b) => a.position - b.position)
+                        .map(cabinet => (
+                          <tr 
+                            key={cabinet.id}
+                            className={selectedCabinet === cabinet.id ? "bg-amber-50" : ""}
+                            onClick={() => setSelectedCabinet(cabinet.id)}
+                          >
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <select
+                                value={cabinet.cabinet_type}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_type', e.target.value)}
+                                className="w-full px-2 py-1 border border-gray-300 rounded"
+                              >
+                                {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
+                                  <option key={type} value={type}>{type}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <input
+                                type="number"
+                                value={cabinet.cabinet_width}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_width', Number(e.target.value))}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded"
+                              />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              {cabinet.position}mm
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <select
+                                value={cabinet.material_doors}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'material_doors', e.target.value)}
+                                className="w-full px-2 py-1 border border-gray-300 rounded"
+                              >
+                                <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                                <option value="Paint - Gray">Paint - Gray</option>
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <input
+                                type="checkbox"
+                                checked={cabinet.hinge_right}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'hinge_right', e.target.checked)}
+                                className="w-4 h-4 border border-gray-300 rounded"
+                                disabled={!cabinet.cabinet_type.includes('Door')}
+                              />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <button
+                                onClick={() => removeCabinet(cabinet.id)}
+                                className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-gray-500">No cabinets in this run. Add a cabinet to get started.</p>
+              )}
+            </div>
+          </>
         ) : (
           <p className="text-gray-500">Select a cabinet run to edit its properties</p>
         )}
