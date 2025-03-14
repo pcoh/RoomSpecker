@@ -4370,7 +4370,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.strokeStyle = selectedRun === run.id ? '#dc2626' : run.type === 'Base' ? '#d97706' : '#3b82f6';
       ctx.lineWidth = selectedRun === run.id ? 3 : 2;
       ctx.stroke();
-
+  
       if (hoverRun === run.id) {
         // Instead of drawing a dotted outline, fill with a highlight color
         ctx.beginPath();
@@ -4386,7 +4386,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         // Fill with the highlight color
         ctx.fill();
       }
-
+  
       // Draw rear wall with dashed line (already at bottom-left of rear wall)
       ctx.beginPath();
       ctx.moveTo(0, 0);
@@ -4418,27 +4418,8 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.stroke();
       }
       
-      // Draw island indicator if applicable
-      if (run.is_island) {
-        try {
-          const centerX = width / 2;
-          const centerY = -height / 2;
-          const radius = Math.min(width, Math.abs(height)) * 0.1;
-          
-          ctx.beginPath();
-          ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-          ctx.fillStyle = '#8b5cf6'; // Purple for island indicator
-          ctx.fill();
-        } catch (err) {
-          console.error('Error drawing island indicator:', err);
-          // Fallback: draw a simple square if circle fails
-          const centerX = width / 2 - 5;
-          const centerY = -height / 2 - 5;
-          ctx.fillStyle = '#8b5cf6';
-          ctx.fillRect(centerX, centerY, 10, 10);
-        }
-      }
-      
+      // Remove the island indicator dot
+  
       // Draw top filler indicator if applicable
       if (run.top_filler) {
         ctx.beginPath();
@@ -4470,12 +4451,10 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       
-      // Draw run ID
+      // Draw run ID with updated text for islands
       const runNumber = run.id;
-      ctx.fillText(`Run ${runNumber} (${run.type})`, width / 2, -height / 2);
-      
-      // Draw dimensions below
-      // ctx.fillText(`${Math.round(run.length)}mm × ${Math.round(run.depth)}mm`, width / 2, -height / 2 + 16);
+      const typeText = run.is_island ? "Island" : run.type;
+      ctx.fillText(`Run ${runNumber} (${typeText})`, width / 2, -height / 2);
       
       // Restore canvas state
       ctx.restore();
@@ -5037,7 +5016,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             <option value="">Select Cabinet Run</option>
             {cabinetRuns.map(run => (
               <option key={run.id} value={run.id}>
-                Run {run.id.split('-')[1]} ({run.type})
+                Run {run.id} ({run.is_island ? 'Island' : run.type})
               </option>
             ))}
           </select>
