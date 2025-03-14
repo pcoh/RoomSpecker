@@ -1,9 +1,4 @@
-// import React, { useState, useRef, useEffect, useMemo } from 'react';
-// import { Copy, RotateCcw, DoorOpen, Square } from 'lucide-react';
-// import ContextMenu from './ContextMenu';
-
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-// import { Copy, RotateCcw, DoorOpen, Square, Save } from 'lucide-react';
 import { Copy, RotateCcw, DoorOpen, Square, Save, BookmarkPlus } from 'lucide-react';
 import ContextMenu from './ContextMenu';
 
@@ -168,7 +163,8 @@ const CANVAS_HEIGHT_px = 600;
 
 // Default values for new cabinet runs
 const DEFAULT_RUN_LENGTH = 1000; // 1m
-const DEFAULT_RUN_DEPTH = 635;   // 0.635m
+const DEFAULT_RUN_DEPTH_BASE = 635;   // 0.635m for base cabinets
+const DEFAULT_RUN_DEPTH_UPPER = 330;  // (0.33m rounded) for upper cabinets
 const DEFAULT_BASE_HEIGHT = 900;     // 0.9m (for visual representation)
 const DEFAULT_UPPER_HEIGHT = 700;    // 0.7m (for visual representation)
 const DEFAULT_UPPER_OFFSET = 1500;   // 1.5m from floor (for visual representation)
@@ -226,13 +222,8 @@ const RoomDesigner: React.FC = () => {
     rotationSnap: 0  // No snap rotation increment (was 90)
   });
   const [hoverRun, setHoverRun] = useState<string | null>(null);
-  
+  const [customDepthRuns, setCustomDepthRuns] = useState<{ [key: string]: boolean }>({});
 
-
-
-
-  
-  
 
   // Initialize main room
   useEffect(() => {
@@ -2094,125 +2085,132 @@ const calculateWallAlignment = (
   };
 
   // Apply run snap (for existing runs being dragged)
-  const applyRunSnap = (
-    runId: string | null, 
-    mousePos: Point, 
-    currentRun?: CabinetRun
-  ): void => {
-    // For clarity: If the user clicked at mousePos, we want to place
-    // the LEFT rear corner of the cabinet at this position
+
+  // const applyRunSnap = (
+  //   runId: string | null, 
+  //   mousePos: Point, 
+  //   currentRun?: CabinetRun
+  // ): void => {
+  //   // For clarity: If the user clicked at mousePos, we want to place
+  //   // the LEFT rear corner of the cabinet at this position
     
-    // Create a temporary run at the clicked position
-    const tempRun: CabinetRun = currentRun || {
-      id: 'temp',
-      start_pos_x: mousePos.x,  // Directly use mouse position as left rear corner
-      start_pos_y: mousePos.y,
-      length: DEFAULT_RUN_LENGTH,
-      depth: DEFAULT_RUN_DEPTH,
-      rotation_z: 0,
-      type: newRunType,
-      start_type: 'Open',
-      end_type: 'Open',
-      top_filler: false,
-      is_island: false
-    };
+  //   // Create a temporary run at the clicked position
+  //   const runType = currentRun?.type || newRunType;
+  //   const runDepth = runType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
     
-    // Find best wall to snap to
-    const snapResult = findBestWallSnap(tempRun);
+  //   const tempRun: CabinetRun = currentRun || {
+  //     id: 'temp',
+  //     start_pos_x: mousePos.x,  // Directly use mouse position as left rear corner
+  //     start_pos_y: mousePos.y,
+  //     length: DEFAULT_RUN_LENGTH,
+  //     depth: runDepth,
+  //     rotation_z: 0,
+  //     type: runType,
+  //     start_type: 'Open',
+  //     end_type: 'Open',
+  //     top_filler: false,
+  //     is_island: false
+  //   };
     
-    if (snapResult.shouldSnap) {
-      if (runId) {
-        // Update existing run
-        setCabinetRuns(prev => prev.map(run => {
-          if (run.id === runId) {
-            return {
-              ...run,
-              start_pos_x: snapResult.newX!,
-              start_pos_y: snapResult.newY!,
-              rotation_z: snapResult.newRotation!,
-              snapInfo: {
-                isSnapped: true,
-                snappedEdge: snapResult.snapEdge as 'rear' | undefined,
-                snappedToWall: snapResult.snapWall
-              }
-            };
-          }
-          return run;
-        }));
-      } else {
-        // Create new run with snap
-        const highestId = cabinetRuns.length > 0 
-          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-          : 0;
-        const newRunId = (highestId + 1).toString();
-        
-        const newRun: CabinetRun = {
-          id: newRunId,
-          start_pos_x: mousePos.x,
-          start_pos_y: mousePos.y,
-          length: DEFAULT_RUN_LENGTH,
-          depth: DEFAULT_RUN_DEPTH,
-          rotation_z: currentRun?.rotation_z || 0, // Use exact rotation from current run, no snapping
-          type: newRunType,
-          start_type: 'Open',
-          end_type: 'Open',
-          top_filler: false,
-          is_island: false
-        };
-        
-        setCabinetRuns([...cabinetRuns, newRun]);
-        setSelectedRun(newRunId);
-      }
-    } else {
-      // No snap - just update or create at mouse position
-      if (runId) {
-        setCabinetRuns(prev => prev.map(run => {
-          if (run.id === runId) {
-            return {
-              ...run,
-              start_pos_x: mousePos.x,
-              start_pos_y: mousePos.y,
-              snapInfo: undefined
-            };
-          }
-          return run;
-        }));
-      } else {
-        // Create new run without snap
-        const highestId = cabinetRuns.length > 0 
-          ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-          : 0;
-        const newRunId = (highestId + 1).toString();
-        
-        const newRun: CabinetRun = {
-          id: newRunId,
-          start_pos_x: mousePos.x,
-          start_pos_y: mousePos.y,
-          length: DEFAULT_RUN_LENGTH,
-          depth: DEFAULT_RUN_DEPTH,
-          rotation_z: currentRun?.rotation_z || 0,
-          type: newRunType,
-          start_type: 'Open',
-          end_type: 'Open',
-          top_filler: false,
-          is_island: false
-        };
-        
-        setCabinetRuns([...cabinetRuns, newRun]);
-        setSelectedRun(newRunId);
-      }
-    }
+  //   // Find best wall to snap to
+  //   const snapResult = findBestWallSnap(tempRun);
     
-    setIsAddingRun(false);
-  };
+  //   if (snapResult.shouldSnap) {
+  //     if (runId) {
+  //       // Update existing run
+  //       setCabinetRuns(prev => prev.map(run => {
+  //         if (run.id === runId) {
+  //           return {
+  //             ...run,
+  //             start_pos_x: snapResult.newX!,
+  //             start_pos_y: snapResult.newY!,
+  //             rotation_z: snapResult.newRotation!,
+  //             snapInfo: {
+  //               isSnapped: true,
+  //               snappedEdge: snapResult.snapEdge as 'rear' | undefined,
+  //               snappedToWall: snapResult.snapWall
+  //             }
+  //           };
+  //         }
+  //         return run;
+  //       }));
+  //     } else {
+  //       // Create new run with snap
+  //       const highestId = cabinetRuns.length > 0 
+  //         ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+  //         : 0;
+  //       const newRunId = (highestId + 1).toString();
+        
+  //       const newRun: CabinetRun = {
+  //         id: newRunId,
+  //         start_pos_x: mousePos.x,
+  //         start_pos_y: mousePos.y,
+  //         length: DEFAULT_RUN_LENGTH,
+  //         depth: runDepth,
+  //         rotation_z: currentRun?.rotation_z || 0, // Use exact rotation from current run, no snapping
+  //         type: runType,
+  //         start_type: 'Open',
+  //         end_type: 'Open',
+  //         top_filler: false,
+  //         is_island: false
+  //       };
+        
+  //       setCabinetRuns([...cabinetRuns, newRun]);
+  //       setSelectedRun(newRunId);
+  //     }
+  //   } else {
+  //     // No snap - just update or create at mouse position
+  //     if (runId) {
+  //       setCabinetRuns(prev => prev.map(run => {
+  //         if (run.id === runId) {
+  //           return {
+  //             ...run,
+  //             start_pos_x: mousePos.x,
+  //             start_pos_y: mousePos.y,
+  //             snapInfo: undefined
+  //           };
+  //         }
+  //         return run;
+  //       }));
+  //     } else {
+  //       // Create new run without snap
+  //       const highestId = cabinetRuns.length > 0 
+  //         ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
+  //         : 0;
+  //       const newRunId = (highestId + 1).toString();
+        
+  //       const newRun: CabinetRun = {
+  //         id: newRunId,
+  //         start_pos_x: mousePos.x,
+  //         start_pos_y: mousePos.y,
+  //         length: DEFAULT_RUN_LENGTH,
+  //         depth: runDepth,
+  //         rotation_z: currentRun?.rotation_z || 0,
+  //         type: runType,
+  //         start_type: 'Open',
+  //         end_type: 'Open',
+  //         top_filler: false,
+  //         is_island: false
+  //       };
+        
+  //       setCabinetRuns([...cabinetRuns, newRun]);
+  //       setSelectedRun(newRunId);
+  //     }
+  //   }
+    
+  //   setIsAddingRun(false);
+  // };
   
   // Calculate the snap position for a run during placement or dragging
   const calculateRunSnapPosition = (
     mousePos: Point, 
     currentRotation: number, 
     runLength: number = DEFAULT_RUN_LENGTH, 
-    runDepth: number = DEFAULT_RUN_DEPTH
+    runType: 'Base' | 'Upper' = 'Base'
   ): RunSnapResult => {
+    // Use the appropriate depth based on run type
+    const runDepth = runType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
+    
     // mousePos is directly the rear left corner of the cabinet
     // Create a temporary run at the mouse position
     const tempRun: CabinetRun = {
@@ -2222,7 +2220,7 @@ const calculateWallAlignment = (
       length: runLength,
       depth: runDepth,
       rotation_z: currentRotation,
-      type: 'Base',
+      type: runType,
       start_type: 'Open',
       end_type: 'Open',
       top_filler: false,
@@ -2231,6 +2229,40 @@ const calculateWallAlignment = (
     
     // Find the best wall to snap to
     return findBestWallSnapForRun(tempRun);
+  };
+  // Updated event handler for type changes in cabinet run properties
+  const handleRunTypeChange = (runId: string, newType: 'Base' | 'Upper') => {
+    setCabinetRuns(prevRuns => prevRuns.map(run => {
+      if (run.id === runId) {
+        // Only update depth if custom depth is not enabled for this run
+        const useCustomDepth = customDepthRuns[runId];
+        const newDepth = useCustomDepth ? run.depth : (newType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER);
+        return {
+          ...run,
+          type: newType,
+          depth: newDepth
+        };
+      }
+      return run;
+    }));
+  };
+
+  const toggleCustomDepth = (runId: string) => {
+    const newCustomDepthState = !customDepthRuns[runId];
+    
+    setCustomDepthRuns(prev => ({
+      ...prev,
+      [runId]: newCustomDepthState
+    }));
+    
+    // If turning off custom depth, reset to default for the current type
+    if (!newCustomDepthState) {
+      const run = cabinetRuns.find(r => r.id === runId);
+      if (run) {
+        const defaultDepth = run.type === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
+        updateRunProperty(runId, 'depth', defaultDepth);
+      }
+    }
   };
 
   // Determine if a point is on the interior side of a wall in a room
@@ -2314,22 +2346,25 @@ const createCabinetRun = (position: Point) => {
   let posY = snapResult.shouldSnap && snapResult.newY !== undefined ? snapResult.newY : position.y;
   const rotation = snapResult.shouldSnap && snapResult.newRotation !== undefined ? snapResult.newRotation : 0;
   
+  // Set depth based on cabinet type
+  const runDepth = newRunType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
+  
   // Create new run with the position representing the rear left corner
   const newRun: CabinetRun = {
     id: newRunId,
     start_pos_x: posX,
     start_pos_y: posY,
     length: DEFAULT_RUN_LENGTH,
-    depth: DEFAULT_RUN_DEPTH,
+    depth: runDepth,
     rotation_z: rotation,
     type: newRunType,
     start_type: 'Open',
     end_type: 'Open',
     top_filler: false,
-    is_island: false,
+    is_island: false, // Explicitly initialize as false
     snapInfo: snapResult.shouldSnap ? {
       isSnapped: true,
-      snappedEdge: snapResult.snapEdge as 'rear'  | undefined,
+      snappedEdge: snapResult.snapEdge as 'rear' | undefined,
       snappedToWall: snapResult.snapWall
     } : undefined
   };
@@ -2341,11 +2376,33 @@ const createCabinetRun = (position: Point) => {
 
 // Update a cabinet run property
 const updateRunProperty = (id: string, property: keyof CabinetRun, value: any) => {
-  setCabinetRuns(prevRuns => prevRuns.map(run => 
-    run.id === id 
-      ? { ...run, [property]: value }
-      : run
-  ));
+  setCabinetRuns(prevRuns => prevRuns.map(run => {
+    if (run.id !== id) return run;
+    
+    // Special handling for type property to update depth if custom depth is not set
+    if (property === 'type' && !customDepthRuns[id]) {
+      const newType = value as 'Base' | 'Upper';
+      const newDepth = newType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
+      return { 
+        ...run, 
+        [property]: value,
+        depth: newDepth
+      };
+    }
+    
+    // Special handling for is_island property
+    if (property === 'is_island') {
+      // When setting as island, remove any snap info
+      return { 
+        ...run, 
+        [property]: value,
+        snapInfo: value === true ? undefined : run.snapInfo 
+      };
+    }
+    
+    // Default handling for other properties
+    return { ...run, [property]: value };
+  }));
 };
 
 // Delete a cabinet run
@@ -2382,11 +2439,26 @@ const rotateRun = (id: string, angle: number) => {
 
 // Function to toggle run properties
 const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => {
-  setCabinetRuns(prevRuns => prevRuns.map(run => 
-    run.id === id 
-      ? { ...run, [property]: !run[property] }
-      : run
-  ));
+  setCabinetRuns(prevRuns => prevRuns.map(run => {
+    if (run.id === id) {
+      // Create a shallow copy with the toggled property
+      const updatedRun = { ...run };
+      
+      // Explicitly handle the property toggle with proper typing
+      if (property === 'is_island') {
+        updatedRun.is_island = !Boolean(run.is_island);
+        // When setting to island, remove snap info
+        if (updatedRun.is_island) {
+          updatedRun.snapInfo = undefined;
+        }
+      } else if (property === 'top_filler') {
+        updatedRun.top_filler = !Boolean(run.top_filler);
+      }
+      
+      return updatedRun;
+    }
+    return run;
+  }));
 };
 
 const exportRoomData = () => {
@@ -3844,7 +3916,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     setEditingCoordinates(newEditingCoordinates);
   };
   
-  const updateSnappedRunsPositionsImmediate = (updatedRooms) => {
+  const updateSnappedRunsPositionsImmediate = (updatedRooms: Room[]) => {
     // Only process if there are cabinet runs that might be snapped
     if (cabinetRuns.length === 0) return;
     
@@ -4348,14 +4420,23 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       
       // Draw island indicator if applicable
       if (run.is_island) {
-        const centerX = width / 2;
-        const centerY = -height / 2;
-        const radius = Math.min(width, height) * 0.1;
-        
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#8b5cf6'; // Purple for island indicator
-        ctx.fill();
+        try {
+          const centerX = width / 2;
+          const centerY = -height / 2;
+          const radius = Math.min(width, Math.abs(height)) * 0.1;
+          
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+          ctx.fillStyle = '#8b5cf6'; // Purple for island indicator
+          ctx.fill();
+        } catch (err) {
+          console.error('Error drawing island indicator:', err);
+          // Fallback: draw a simple square if circle fails
+          const centerX = width / 2 - 5;
+          const centerY = -height / 2 - 5;
+          ctx.fillStyle = '#8b5cf6';
+          ctx.fillRect(centerX, centerY, 10, 10);
+        }
       }
       
       // Draw top filler indicator if applicable
@@ -4402,7 +4483,25 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
   };
 
   useEffect(() => {
-    drawRoom();
+    try {
+      drawRoom();
+    } catch (error) {
+      console.error("Error in drawRoom:", error);
+      // Attempt recovery by forcing a redraw with default settings
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = '#f0f0f0';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.font = '14px Arial';
+          ctx.fillStyle = '#ff0000';
+          ctx.textAlign = 'center';
+          ctx.fillText('Error rendering - please refresh', canvas.width/2, canvas.height/2);
+        }
+      }
+    }
   }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun, hoverRun]);
 
   return (
@@ -4555,10 +4654,9 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                   <div className="flex items-center">
                     <label htmlFor="runType" className="mr-2 text-sm text-amber-800">Type:</label>
                     <select
-                      id="runType"
                       value={newRunType}
                       onChange={(e) => setNewRunType(e.target.value as 'Base' | 'Upper')}
-                      className="px-2 py-1 border border-amber-300 rounded bg-white"
+                      className="w-32 px-2 py-1 border border-gray-300 rounded"
                     >
                       <option value="Base">Base</option>
                       <option value="Upper">Upper</option>
@@ -5006,12 +5104,24 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                     Depth (mm)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <input
-                      type="number"
-                      value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
-                      onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
-                      className="w-24 px-2 py-1 border border-gray-300 rounded"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
+                        onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
+                        disabled={!customDepthRuns[selectedRun]}
+                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${!customDepthRuns[selectedRun] ? 'bg-gray-100' : ''}`}
+                      />
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={customDepthRuns[selectedRun] || false}
+                          onChange={() => toggleCustomDepth(selectedRun)}
+                          className="w-4 h-4 border border-gray-300 rounded"
+                        />
+                        <span className="text-sm text-gray-700">Custom depth</span>
+                      </label>
+                    </div>
                   </td>
                 </tr>
                 
