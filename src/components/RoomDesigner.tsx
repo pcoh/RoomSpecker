@@ -1097,112 +1097,115 @@ const RoomDesigner: React.FC = () => {
     setTimeout(updateAttachedPoints, 0);
   };
 
-  // Enhanced function to explicitly handle updating secondary rooms and their doors/windows
-const handleForceUpdateSecondaryRooms = () => {
-  console.log("Starting force update of secondary rooms");
   
-  // First, create a deep copy of rooms
-  const updatedRooms = JSON.parse(JSON.stringify(rooms));
-  let roomsUpdated = false;
-  
-  // Step 1: Update attached points
-  for (const room of updatedRooms) {
-    // Skip processing the main room
-    if (room.isMain) continue;
+  const handleForceUpdateSecondaryRooms = () => {
+    console.log("Starting force update of secondary rooms");
     
-    let roomChanged = false;
-    const originalPoints = JSON.parse(JSON.stringify(room.points));
+    // First, create a deep copy of rooms
+    const updatedRooms = JSON.parse(JSON.stringify(rooms));
+    let roomsUpdated = false;
     
-    // Update all attached points in this room
-    for (let i = 0; i < room.points.length; i++) {
-      const point = room.points[i];
+    // Step 1: Update attached points
+    for (const room of updatedRooms) {
+      // Skip processing the main room
+      if (room.isMain) continue;
       
-      if (point.attachedTo) {
-        // Find the parent room
-        const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
-        if (!parentRoom) continue;
+      let roomChanged = false;
+      const originalPoints = JSON.parse(JSON.stringify(room.points));
+      
+      // Update all attached points in this room
+      for (let i = 0; i < room.points.length; i++) {
+        const point = room.points[i];
         
-        // Get the wall points
-        const wallIndex = point.attachedTo.wallIndex;
-        if (wallIndex >= parentRoom.points.length) continue;
-        
-        const wallStart = parentRoom.points[wallIndex];
-        const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
-        
-        // Calculate the new position
-        const t = point.attachedTo.t;
-        const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
-        const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
-        
-        // Update the point if needed
-        if (Math.abs(point.x - newX) > 0.001 || Math.abs(point.y - newY) > 0.001) {
-          point.x = newX;
-          point.y = newY;
-          roomChanged = true;
-          roomsUpdated = true;
-          console.log(`Updated point in room ${room.id}, x=${newX}, y=${newY}`);
+        if (point.attachedTo) {
+          // Find the parent room
+          const parentRoom = updatedRooms.find(r => r.id === point.attachedTo.roomId);
+          if (!parentRoom) continue;
+          
+          // Get the wall points
+          const wallIndex = point.attachedTo.wallIndex;
+          if (wallIndex >= parentRoom.points.length) continue;
+          
+          const wallStart = parentRoom.points[wallIndex];
+          const wallEnd = parentRoom.points[(wallIndex + 1) % parentRoom.points.length];
+          
+          // Calculate the new position
+          const t = point.attachedTo.t;
+          const newX = wallStart.x + t * (wallEnd.x - wallStart.x);
+          const newY = wallStart.y + t * (wallEnd.y - wallStart.y);
+          
+          // Update the point if needed
+          if (Math.abs(point.x - newX) > 0.001 || Math.abs(point.y - newY) > 0.001) {
+            point.x = newX;
+            point.y = newY;
+            roomChanged = true;
+            roomsUpdated = true;
+            console.log(`Updated point in room ${room.id}, x=${newX}, y=${newY}`);
+          }
+        }
+      }
+      
+      if (room.isComplete) {
+        // Update windows and doors even if points didn't change directly
+        // This ensures windows/doors always stay aligned with walls
+        if (room.doors.length > 0 || room.windows.length > 0) {
+          const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, originalPoints);
+          
+          // Check if doors actually changed
+          let doorsChanged = false;
+          if (doors.length !== room.doors.length) {
+            doorsChanged = true;
+          } else {
+            for (let i = 0; i < doors.length; i++) {
+              if (Math.abs(doors[i].startPoint.x - room.doors[i].startPoint.x) > 0.001 ||
+                  Math.abs(doors[i].startPoint.y - room.doors[i].startPoint.y) > 0.001 ||
+                  Math.abs(doors[i].endPoint.x - room.doors[i].endPoint.x) > 0.001 ||
+                  Math.abs(doors[i].endPoint.y - room.doors[i].endPoint.y) > 0.001) {
+                doorsChanged = true;
+                break;
+              }
+            }
+          }
+          
+          // Check if windows actually changed
+          let windowsChanged = false;
+          if (windows.length !== room.windows.length) {
+            windowsChanged = true;
+          } else {
+            for (let i = 0; i < windows.length; i++) {
+              if (Math.abs(windows[i].startPoint.x - room.windows[i].startPoint.x) > 0.001 ||
+                  Math.abs(windows[i].startPoint.y - room.windows[i].startPoint.y) > 0.001 ||
+                  Math.abs(windows[i].endPoint.x - room.windows[i].endPoint.x) > 0.001 ||
+                  Math.abs(windows[i].endPoint.y - room.windows[i].endPoint.y) > 0.001) {
+                windowsChanged = true;
+                break;
+              }
+            }
+          }
+          
+          // Only update if something actually changed
+          if (doorsChanged || windowsChanged) {
+            room.doors = doors;
+            room.windows = windows;
+            roomsUpdated = true;
+            console.log(`Updated doors/windows in room ${room.id}`);
+          }
         }
       }
     }
     
-    if (room.isComplete) {
-      // Update windows and doors even if points didn't change directly
-      // This ensures windows/doors always stay aligned with walls
-      if (room.doors.length > 0 || room.windows.length > 0) {
-        const { doors, windows } = getUpdatedDoorsAndWindows(room, room.points, originalPoints);
-        
-        // Check if doors actually changed
-        let doorsChanged = false;
-        if (doors.length !== room.doors.length) {
-          doorsChanged = true;
-        } else {
-          for (let i = 0; i < doors.length; i++) {
-            if (Math.abs(doors[i].startPoint.x - room.doors[i].startPoint.x) > 0.001 ||
-                Math.abs(doors[i].startPoint.y - room.doors[i].startPoint.y) > 0.001 ||
-                Math.abs(doors[i].endPoint.x - room.doors[i].endPoint.x) > 0.001 ||
-                Math.abs(doors[i].endPoint.y - room.doors[i].endPoint.y) > 0.001) {
-              doorsChanged = true;
-              break;
-            }
-          }
-        }
-        
-        // Check if windows actually changed
-        let windowsChanged = false;
-        if (windows.length !== room.windows.length) {
-          windowsChanged = true;
-        } else {
-          for (let i = 0; i < windows.length; i++) {
-            if (Math.abs(windows[i].startPoint.x - room.windows[i].startPoint.x) > 0.001 ||
-                Math.abs(windows[i].startPoint.y - room.windows[i].startPoint.y) > 0.001 ||
-                Math.abs(windows[i].endPoint.x - room.windows[i].endPoint.x) > 0.001 ||
-                Math.abs(windows[i].endPoint.y - room.windows[i].endPoint.y) > 0.001) {
-              windowsChanged = true;
-              break;
-            }
-          }
-        }
-        
-        // Only update if something actually changed
-        if (doorsChanged || windowsChanged) {
-          room.doors = doors;
-          room.windows = windows;
-          roomsUpdated = true;
-          console.log(`Updated doors/windows in room ${room.id}`);
-        }
-      }
+    // Only update state if changes were made
+    if (roomsUpdated) {
+      console.log("Applying secondary room updates");
+      setRooms(updatedRooms);
+      setForceUpdateTimestamp(Date.now()); // Trigger another component update
+      
+      // After updating rooms, update the snapped cabinet runs
+      setTimeout(updateSnappedRunsPositions, 50);
+    } else {
+      console.log("No secondary room updates needed");
     }
-  }
-  
-  // Only update state if changes were made
-  if (roomsUpdated) {
-    console.log("Applying secondary room updates");
-    setRooms(updatedRooms);
-    setForceUpdateTimestamp(Date.now()); // Trigger another component update
-  } else {
-    console.log("No secondary room updates needed");
-  }
-};
+  };
 
 
   const updateWallLength = (roomId: string, index: number, newLength: number) => {
@@ -1259,6 +1262,9 @@ const handleForceUpdateSecondaryRooms = () => {
     
     // After updating wall length, update attached points from other rooms
     setTimeout(updateAttachedPoints, 0);
+    
+    // Also update cabinet runs that are snapped to walls
+    setTimeout(updateSnappedRunsPositions, 50);
     
     // After updating the state, simulate a drag operation to trigger post-process effects
     const nextPointIndex = (index + 1) % room.points.length;
@@ -1334,6 +1340,9 @@ const handleForceUpdateSecondaryRooms = () => {
     
     // After updating angle, update attached points from other rooms
     setTimeout(updateAttachedPoints, 0);
+    
+    // Also update cabinet runs that are snapped to walls
+    setTimeout(updateSnappedRunsPositions, 50);
     
     // After updating the state, simulate a drag operation to trigger post-process effects
     const nextPointIndex = (index + 1) % room.points.length;
@@ -1843,6 +1852,89 @@ const calculateWallAlignment = (
     }
     
     return bestSnap;
+  };
+
+  // Update function to maintain run-wall relationships when rooms change
+  const updateSnappedRunsPositions = () => {
+    // Only process if there are cabinet runs that might be snapped
+    if (cabinetRuns.length === 0) return;
+    
+    let hasUpdates = false;
+    
+    // Create a copy of the cabinet runs to modify
+    const updatedRuns = JSON.parse(JSON.stringify(cabinetRuns));
+    
+    // Check each run for snapping relationships
+    for (let i = 0; i < updatedRuns.length; i++) {
+      const run = updatedRuns[i];
+      
+      // Skip runs that aren't snapped to any wall
+      if (!run.snapInfo?.isSnapped || !run.snapInfo.snappedToWall) continue;
+      
+      const { roomId, wallIndex } = run.snapInfo.snappedToWall;
+      const room = rooms.find(r => r.id === roomId);
+      
+      // Skip if the referenced room or wall doesn't exist
+      if (!room || wallIndex >= room.points.length) continue;
+      
+      // Get the wall points
+      const wallStart = room.points[wallIndex];
+      const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+      
+      // Calculate the wall's current vector
+      const wallDx = wallEnd.x - wallStart.x;
+      const wallDy = wallEnd.y - wallStart.y;
+      const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+      
+      // Skip if wall length is zero
+      if (wallLength === 0) continue;
+      
+      // Calculate the optimal rotation to align with the wall
+      const newRotation = calculateWallAlignment(
+        wallStart, wallEnd, roomId
+      );
+      
+      // Calculate the run's rear edge midpoint position
+      const corners = calculateRunCorners(run);
+      const rearEdgeMidpoint = {
+        x: (corners.rearLeft.x + corners.rearRight.x) / 2,
+        y: (corners.rearLeft.y + corners.rearRight.y) / 2
+      };
+      
+      // Find the closest point on the wall to the run's rear edge midpoint
+      const { closestPoint, t } = distancePointToWall(
+        rearEdgeMidpoint, wallStart, wallEnd
+      );
+      
+      // Calculate how much we need to move to keep the run aligned
+      const dx = closestPoint.x - rearEdgeMidpoint.x;
+      const dy = closestPoint.y - rearEdgeMidpoint.y;
+      
+      // Calculate new position for the run's rear-left corner
+      const rotationRad = (newRotation * Math.PI) / 180;
+      const runLengthHalf = run.length / 2;
+      
+      // Adjust for the run's rotation and length to get the rear-left corner
+      const newX = closestPoint.x - Math.cos(rotationRad) * runLengthHalf;
+      const newY = closestPoint.y - Math.sin(rotationRad) * runLengthHalf;
+      
+      // Only update if position or rotation has changed significantly
+      if (
+        Math.abs(run.start_pos_x - newX) > 0.1 ||
+        Math.abs(run.start_pos_y - newY) > 0.1 ||
+        Math.abs(run.rotation_z - newRotation) > 0.1
+      ) {
+        updatedRuns[i].start_pos_x = newX;
+        updatedRuns[i].start_pos_y = newY;
+        updatedRuns[i].rotation_z = newRotation;
+        hasUpdates = true;
+      }
+    }
+    
+    // Only update the state if changes were made
+    if (hasUpdates) {
+      setCabinetRuns(updatedRuns);
+    }
   };
 
   // Calculate centroid of a polygon
@@ -3228,6 +3320,11 @@ const handleCanvasMouseUp = () => {
     }
   }
 
+  // If we were dragging a point, update snapped cabinet runs
+  if (selectedPoint) {
+    setTimeout(updateSnappedRunsPositions, 50);
+  }
+
   // Clean up dragging state
   setDraggedRun(null);
   setIsDragging(false);
@@ -3393,6 +3490,7 @@ const handleCanvasMouseUp = () => {
     ));
   };
 
+
 const updateAttachedPoints = () => {
   // Create a deep copy to avoid direct mutations
   const updatedRooms = JSON.parse(JSON.stringify(rooms));
@@ -3477,6 +3575,9 @@ const updateAttachedPoints = () => {
   // Only update state if something changed
   if (needsUpdate) {
     setRooms(updatedRooms);
+    
+    // After updating room geometry, update snapped cabinet runs
+    setTimeout(updateSnappedRunsPositions, 0);
   }
 };
 
@@ -3571,11 +3672,63 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const newAngle = Number(editingAngles[key]);
     if (!isNaN(newAngle)) {
       console.log(`Updating angle at ${roomId}, index ${index}, angle=${newAngle}`);
+      
+      // Get the room to be updated
+      const room = rooms.find(r => r.id === roomId);
+      if (!room) return;
+      
+      // Calculate the updated points for this angle change
+      const currentPoint = room.points[index];
+      const prevPoint = room.points[(index - 1 + room.points.length) % room.points.length];
+      const nextPointIndex = (index + 1) % room.points.length;
+      const nextPoint = room.points[nextPointIndex];
+      
+      // Skip if the next point is attached to another wall
+      if (nextPoint.attachedTo) {
+        return;
+      }
+      
+      // Calculate the new angle in radians
+      const angle1 = Math.atan2(
+        prevPoint.y - currentPoint.y,
+        prevPoint.x - currentPoint.x
+      );
+      
+      const angleRad = (-newAngle * Math.PI) / 180;
+      const newAngleRad = angle1 + angleRad;
+      
+      // Get the current wall length
+      const currentWallLength = Math.sqrt(
+        Math.pow(nextPoint.x - currentPoint.x, 2) + 
+        Math.pow(nextPoint.y - currentPoint.y, 2)
+      );
+      
+      // Calculate the new position for the next point
+      const newX = currentPoint.x + currentWallLength * Math.cos(newAngleRad);
+      const newY = currentPoint.y + currentWallLength * Math.sin(newAngleRad);
+      
+      // Create an updated copy of the rooms
+      const updatedRooms = rooms.map(r => {
+        if (r.id !== roomId) return r;
+        
+        const newPoints = [...r.points];
+        newPoints[nextPointIndex] = {
+          ...newPoints[nextPointIndex],
+          x: newX,
+          y: newY
+        };
+        
+        return {
+          ...r,
+          points: newPoints
+        };
+      });
+      
+      // Update the rooms state first
       updateAngle(roomId, index, newAngle);
       
-      // Force an immediate update of secondary rooms
-      console.log("Forcing secondary room update after angle change");
-      setTimeout(handleForceUpdateSecondaryRooms, 50);
+      // Then update the cabinet runs immediately using the calculated new room state
+      updateSnappedRunsPositionsImmediate(updatedRooms);
     }
     
     // Clear the editing state
@@ -3593,11 +3746,54 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const newLength = Number(editingWallLengths[key]);
     if (!isNaN(newLength) && newLength > 0) {
       console.log(`Updating wall length at ${roomId}, index ${index}, length=${newLength}`);
+      
+      // Get the room to be updated
+      const room = rooms.find(r => r.id === roomId);
+      if (!room) return;
+      
+      // Directly calculate the updated points for this wall
+      const currentPoint = room.points[index];
+      const nextPointIndex = (index + 1) % room.points.length;
+      const nextPoint = room.points[nextPointIndex];
+      
+      // Skip if the next point is attached to another wall
+      if (nextPoint.attachedTo) {
+        // Cannot update attached points through this method
+        return;
+      }
+      
+      // Calculate the angle of the current wall
+      const angle = Math.atan2(
+        nextPoint.y - currentPoint.y,
+        nextPoint.x - currentPoint.x
+      );
+      
+      // Calculate the new position for the next point
+      const newX = currentPoint.x + Math.cos(angle) * newLength;
+      const newY = currentPoint.y + Math.sin(angle) * newLength;
+      
+      // Create an updated copy of the rooms
+      const updatedRooms = rooms.map(r => {
+        if (r.id !== roomId) return r;
+        
+        const newPoints = [...r.points];
+        newPoints[nextPointIndex] = {
+          ...newPoints[nextPointIndex],
+          x: newX,
+          y: newY
+        };
+        
+        return {
+          ...r,
+          points: newPoints
+        };
+      });
+      
+      // Update the rooms state first
       updateWallLength(roomId, index, newLength);
       
-      // Force an immediate update of secondary rooms
-      console.log("Forcing secondary room update after wall length change");
-      setTimeout(handleForceUpdateSecondaryRooms, 50);
+      // Then update the cabinet runs immediately using the calculated new room state
+      updateSnappedRunsPositionsImmediate(updatedRooms);
     }
     
     // Clear the editing state
@@ -3626,11 +3822,19 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       const y = Number(coords.y);
       if (!isNaN(x) && !isNaN(y)) {
         console.log(`Updating point at ${roomId}, index ${index}, x=${x}, y=${y}`);
+        
+        // First, update the point in the room
         updatePoint(roomId, index, x, y);
         
-        // Force an immediate update of secondary rooms
-        console.log("Forcing secondary room update after coordinate change");
-        setTimeout(handleForceUpdateSecondaryRooms, 50);
+        // Instead of using setTimeout, directly update snapped runs after the room state has been updated
+        // We'll do this by calling updateSnappedRunsPositions directly with the updated rooms
+        const updatedRooms = rooms.map(r => 
+          r.id === roomId ? {...r, points: r.points.map((p, i) => 
+            i === index ? {...p, x, y} : p
+          )} : r
+        );
+        
+        updateSnappedRunsPositionsImmediate(updatedRooms);
       }
     }
     
@@ -3638,6 +3842,89 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const newEditingCoordinates = { ...editingCoordinates };
     delete newEditingCoordinates[key];
     setEditingCoordinates(newEditingCoordinates);
+  };
+  
+  const updateSnappedRunsPositionsImmediate = (updatedRooms) => {
+    // Only process if there are cabinet runs that might be snapped
+    if (cabinetRuns.length === 0) return;
+    
+    let hasUpdates = false;
+    
+    // Create a copy of the cabinet runs to modify
+    const updatedRuns = JSON.parse(JSON.stringify(cabinetRuns));
+    
+    // Check each run for snapping relationships
+    for (let i = 0; i < updatedRuns.length; i++) {
+      const run = updatedRuns[i];
+      
+      // Skip runs that aren't snapped to any wall
+      if (!run.snapInfo?.isSnapped || !run.snapInfo.snappedToWall) continue;
+      
+      const { roomId, wallIndex } = run.snapInfo.snappedToWall;
+      
+      // Use the updated rooms that were passed in
+      const room = updatedRooms.find(r => r.id === roomId);
+      
+      // Skip if the referenced room or wall doesn't exist
+      if (!room || wallIndex >= room.points.length) continue;
+      
+      // Get the wall points
+      const wallStart = room.points[wallIndex];
+      const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+      
+      // Calculate the wall's current vector
+      const wallDx = wallEnd.x - wallStart.x;
+      const wallDy = wallEnd.y - wallStart.y;
+      const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+      
+      // Skip if wall length is zero
+      if (wallLength === 0) continue;
+      
+      // Calculate the optimal rotation to align with the wall
+      const newRotation = calculateWallAlignment(
+        wallStart, wallEnd, roomId
+      );
+      
+      // Get the current corners of the run
+      const corners = calculateRunCorners(run);
+      
+      // Calculate the rear midpoint of the cabinet run
+      const rearMidpoint = {
+        x: (corners.rearLeft.x + corners.rearRight.x) / 2,
+        y: (corners.rearLeft.y + corners.rearRight.y) / 2
+      };
+      
+      // Find the closest point on the wall
+      const { closestPoint } = distancePointToWall(
+        rearMidpoint, wallStart, wallEnd
+      );
+      
+      // Calculate new position for the run's rear-left corner
+      const rotationRad = (newRotation * Math.PI) / 180;
+      const cos = Math.cos(rotationRad);
+      const sin = Math.sin(rotationRad);
+      
+      // Calculate the new position for rear-left corner
+      const newX = closestPoint.x - (run.length / 2) * cos;
+      const newY = closestPoint.y - (run.length / 2) * sin;
+      
+      // Only update if position or rotation has changed significantly
+      if (
+        Math.abs(run.start_pos_x - newX) > 0.1 ||
+        Math.abs(run.start_pos_y - newY) > 0.1 ||
+        Math.abs(run.rotation_z - newRotation) > 0.1
+      ) {
+        updatedRuns[i].start_pos_x = newX;
+        updatedRuns[i].start_pos_y = newY;
+        updatedRuns[i].rotation_z = newRotation;
+        hasUpdates = true;
+      }
+    }
+    
+    // Only update the state if changes were made
+    if (hasUpdates) {
+      setCabinetRuns(updatedRuns);
+    }
   };
 
   const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
