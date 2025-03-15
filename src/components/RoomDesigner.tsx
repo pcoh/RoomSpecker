@@ -2480,11 +2480,44 @@ const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => 
 };
 
 // Get available cabinet types based on run type
+// Get available cabinet types based on run type
 const getAvailableCabinetTypes = (runType: 'Base' | 'Upper'): string[] => {
   if (runType === 'Base') {
-    return ['Base - 2-Drawer', 'Base - 3-Drawer', 'Base - 4-Drawer'];
+    return [
+      'Base - 2-Drawer',
+      'Base - 3-Drawer',
+      'Base - 4-Drawer',
+      'Base - Leaf Door & Shelves',
+      'Base - Double Leaf Door & Shelves',
+      'Base - Bookcase',
+      'Base - Sink & 3-Drawer',
+      'Base - Trash 2-Drawer',
+      'Base - Cooktop 30 & 3-Drawer',
+      'Base - Cooktop 36 & 3-Drawer',
+      'Base - Oven',
+      'Base - Oven & Cooktop 30',
+      'Base - Corner Left',
+      'Base - Corner Right',
+      'Base - Dishwasher',
+      'Tall - Bookcase',
+      'Tall - Single Leaf Door & Shelves',
+      'Tall - Double Leaf Door & Shelves',
+      'Tall - Warming & Oven & Micro & Leaf Door',
+      'Tall - Warming & Oven & Micro & Double Leaf Door',
+      'Tall - Integrated Fridge_Freezer 36 & Double Leaf Door'
+    ];
   } else {
-    return ['Wall - Leaf Door & Shelves', 'Wall - Double Leaf Door & Shelves', 'Wall - Bookcase'];
+    return [
+      'Wall - Leaf Door & Shelves', 
+      'Wall - Double Leaf Door & Shelves', 
+      'Wall - Bookcase',
+      'Wall - Leaf Door Corner Pie Left',
+      'Wall - Leaf Door Corner Pie Right',
+      'Wall - Floating Shelf',
+      'Wall - ExhaustFan - Integrated - 36x11 - Double Leaf Door',
+      'Wall - ExhaustFan - Integrated - 30x11 - Double Leaf Door',
+      'CounterTop - Leaf Door & Shelves'
+    ];
   }
 };
 
@@ -2537,38 +2570,56 @@ const updateRunLength = (runId: string) => {
 };
 
 // Remove a cabinet
-const removeCabinet = (cabinetId: string) => {
+const removeCabinet = (cabinetId, event) => {
+  // Stop event propagation to prevent selecting the cabinet row
+  if (event) {
+    event.stopPropagation();
+  }
+  
   const cabinet = cabinets.find(c => c.id === cabinetId);
   if (!cabinet) return;
   
   const runId = cabinet.cabinet_run_id;
   
-  // Remove the cabinet
-  setCabinets(cabinets.filter(c => c.id !== cabinetId));
+  // Create a new array without the removed cabinet
+  const updatedCabinets = cabinets.filter(c => c.id !== cabinetId);
   
   // Recalculate positions for remaining cabinets in the run
-  setTimeout(() => {
-    const remainingRunCabinets = cabinets
-      .filter(c => c.cabinet_run_id === runId && c.id !== cabinetId)
-      .sort((a, b) => a.position - b.position);
-    
-    let currentPosition = 0;
-    const updatedCabinets = cabinets.map(c => {
-      if (c.cabinet_run_id !== runId || c.id === cabinetId) return c;
-      
-      const updatedCabinet = { ...c, position: currentPosition };
-      currentPosition += c.cabinet_width;
-      return updatedCabinet;
-    });
-    
-    setCabinets(updatedCabinets);
-    
-    // Update the run length
-    updateRunLength(runId);
-  }, 0);
+  const runCabinets = updatedCabinets
+    .filter(c => c.cabinet_run_id === runId)
+    .sort((a, b) => a.position - b.position);
   
+  let currentPosition = 0;
+  const finalCabinets = updatedCabinets.map(c => {
+    if (c.cabinet_run_id !== runId) return c;
+    
+    const position = currentPosition;
+    currentPosition += c.cabinet_width;
+    return { ...c, position };
+  });
+  
+  // Update state with the new cabinets array
+  setCabinets(finalCabinets);
+  
+  // If the selected cabinet was removed, clear the selection
   if (selectedCabinet === cabinetId) {
     setSelectedCabinet(null);
+  }
+  
+  // Update the run length
+  // Calculate the new length directly from the filtered cabinets
+  const totalWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+  
+  // Only update run length if there are cabinets or the total width is greater than zero
+  if (runCabinets.length > 0 && totalWidth > 0) {
+    setCabinetRuns(prevRuns => prevRuns.map(run => 
+      run.id === runId ? { ...run, length: totalWidth } : run
+    ));
+  } else if (runCabinets.length === 0) {
+    // If no cabinets left, set run to default length
+    setCabinetRuns(prevRuns => prevRuns.map(run => 
+      run.id === runId ? { ...run, length: DEFAULT_RUN_LENGTH } : run
+    ));
   }
 };
 
@@ -4664,7 +4715,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.font = '12px Arial';
       ctx.fillStyle = '#000000';
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.textBaseline = 'bottom';
       
       // Draw run ID with updated text for islands
       const runNumber = run.id;
@@ -4681,7 +4732,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         runCabinets.forEach(cabinet => {
           const cabinetX = cabinet.position * scale;
           const cabinetWidth = cabinet.cabinet_width * scale;
-          const cabinetDepth = height; // Use the height (negative) from the run
+          const cabinetDepth = -height; // Use the height (negative) from the run
           
           // Draw cabinet outline
           ctx.beginPath();
@@ -4702,22 +4753,42 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           ctx.font = '10px Arial';
           ctx.fillStyle = '#000';
           ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
+          ctx.textBaseline = 'top';
           
           // Create shortened label based on type
           let shortLabel = cabinet.cabinet_type;
           if (cabinet.cabinet_type.startsWith('Base - ')) {
-            shortLabel = cabinet.cabinet_type.replace('Base - ', 'B');
+            shortLabel = cabinet.cabinet_type.replace('Base - ', 'B-');
           } else if (cabinet.cabinet_type.startsWith('Wall - ')) {
-            shortLabel = cabinet.cabinet_type.replace('Wall - ', 'W');
+            shortLabel = cabinet.cabinet_type.replace('Wall - ', 'W-');
+          } else if (cabinet.cabinet_type.startsWith('Tall - ')) {
+            shortLabel = cabinet.cabinet_type.replace('Tall - ', 'T-');
+          } else if (cabinet.cabinet_type.startsWith('CounterTop - ')) {
+            shortLabel = cabinet.cabinet_type.replace('CounterTop - ', 'CT-');
+          }
+
+          // Further abbreviate common terms
+          shortLabel = shortLabel
+            .replace('Double Leaf Door', 'DblDr')
+            .replace('Leaf Door', 'LfDr')
+            .replace('Shelves', 'Shlv')
+            .replace('Integrated', 'Int')
+            .replace('Fridge_Freezer', 'Fridge')
+            .replace('ExhaustFan', 'Exhst')
+            .replace('Cooktop', 'Cktop')
+            .replace('Corner', 'Cnr');
+
+          // If still too long, truncate
+          if (shortLabel.length > 12) {
+            shortLabel = shortLabel.substring(0, 12) + '...';
           }
           
           // Draw the label
-          ctx.fillText(
-            shortLabel, 
-            cabinetX + cabinetWidth / 2, 
-            cabinetDepth / 2
-          );
+          // ctx.fillText(
+          //   shortLabel, 
+          //   cabinetX + cabinetWidth / 2, 
+          //   cabinetDepth / 2
+          // );
           
           // Draw hinge markers if applicable
           if (cabinet.cabinet_type.includes('Door')) {
@@ -4762,10 +4833,9 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                 ctx.fillRect(handleX, handleY - 1, handleWidth, 2);
               }
             }
-          }
-          
-          // Draw door/bookcase details
-          if (cabinet.cabinet_type.includes('Bookcase')) {
+          } 
+          // For cabinet types with doors or bookcase
+          else if (cabinet.cabinet_type.includes('Bookcase')) {
             // Draw shelf lines
             ctx.strokeStyle = '#666';
             ctx.lineWidth = 1;
@@ -4781,7 +4851,154 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
               ctx.lineTo(cabinetX + cabinetWidth, y);
               ctx.stroke();
             }
-          } else if (cabinet.cabinet_type.includes('Door')) {
+          } 
+          // For appliances - special case rendering
+          else if (cabinet.cabinet_type.includes('Oven') || 
+                   cabinet.cabinet_type.includes('Cooktop') ||
+                   cabinet.cabinet_type.includes('Sink') ||
+                   cabinet.cabinet_type.includes('Dishwasher') ||
+                   cabinet.cabinet_type.includes('ExhaustFan') ||
+                   cabinet.cabinet_type.includes('Fridge')) {
+            
+            // Add appliance icon or symbol
+            ctx.fillStyle = '#888';
+            
+            if (cabinet.cabinet_type.includes('Sink')) {
+              // Draw sink icon (oval shape)
+              const sinkWidth = cabinetWidth * 0.6;
+              const sinkHeight = Math.abs(cabinetDepth) * 0.5;
+              const sinkX = cabinetX + (cabinetWidth - sinkWidth) / 2;
+              const sinkY = cabinetDepth * 0.3;
+              
+              ctx.beginPath();
+              ctx.ellipse(
+                sinkX + sinkWidth / 2, 
+                sinkY, 
+                sinkWidth / 2, 
+                sinkHeight / 2, 
+                0, 0, Math.PI * 2
+              );
+              ctx.fillStyle = '#ccc';
+              ctx.fill();
+              ctx.strokeStyle = '#888';
+              ctx.stroke();
+            } 
+            else if (cabinet.cabinet_type.includes('Oven')) {
+              // Draw oven icon (rectangle with line in middle)
+              const ovenWidth = cabinetWidth * 0.8;
+              const ovenHeight = Math.abs(cabinetDepth) * 0.6;
+              const ovenX = cabinetX + (cabinetWidth - ovenWidth) / 2;
+              const ovenY = cabinetDepth * 0.2;
+              
+              ctx.fillStyle = '#ddd';
+              ctx.fillRect(ovenX, ovenY, ovenWidth, ovenHeight);
+              ctx.strokeStyle = '#888';
+              ctx.strokeRect(ovenX, ovenY, ovenWidth, ovenHeight);
+              
+              // Oven door handle
+              ctx.fillStyle = '#888';
+              ctx.fillRect(ovenX + ovenWidth / 2 - 10, ovenY + ovenHeight - 5, 20, 3);
+            }
+            else if (cabinet.cabinet_type.includes('Cooktop')) {
+              // Draw cooktop burner circles
+              const numBurners = cabinet.cabinet_type.includes('30') ? 4 : 5;
+              const burnerRadius = cabinetWidth / (numBurners * 3);
+              const cooktopY = cabinetDepth * 0.3;
+              
+              ctx.fillStyle = '#333';
+              
+              if (numBurners === 4) {
+                // 2x2 grid for 4 burners
+                const spacing = cabinetWidth / 3;
+                const startX = cabinetX + spacing / 2;
+                
+                for (let row = 0; row < 2; row++) {
+                  for (let col = 0; col < 2; col++) {
+                    ctx.beginPath();
+                    ctx.arc(
+                      startX + col * spacing, 
+                      cooktopY + row * spacing / 2, 
+                      burnerRadius, 
+                      0, Math.PI * 2
+                    );
+                    ctx.fill();
+                  }
+                }
+              } else {
+                // 5 burners - one in center, 4 around
+                const centerX = cabinetX + cabinetWidth / 2;
+                const spacing = cabinetWidth / 4;
+                
+                // Center burner
+                ctx.beginPath();
+                ctx.arc(centerX, cooktopY, burnerRadius * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Corner burners
+                for (let i = 0; i < 4; i++) {
+                  const angle = i * Math.PI / 2;
+                  ctx.beginPath();
+                  ctx.arc(
+                    centerX + Math.cos(angle) * spacing, 
+                    cooktopY + Math.sin(angle) * spacing / 2, 
+                    burnerRadius, 
+                    0, Math.PI * 2
+                  );
+                  ctx.fill();
+                }
+              }
+            }
+            else if (cabinet.cabinet_type.includes('Fridge')) {
+              // Draw fridge icon
+              const fridgeWidth = cabinetWidth * 0.9;
+              const fridgeHeight = Math.abs(cabinetDepth) * 0.9;
+              const fridgeX = cabinetX + (cabinetWidth - fridgeWidth) / 2;
+              const fridgeY = cabinetDepth * 0.05;
+              
+              // Fridge body
+              ctx.fillStyle = '#ddd';
+              ctx.fillRect(fridgeX, fridgeY, fridgeWidth, fridgeHeight);
+              ctx.strokeStyle = '#888';
+              ctx.strokeRect(fridgeX, fridgeY, fridgeWidth, fridgeHeight);
+              
+              // Fridge/freezer divider line
+              const dividerY = fridgeY + fridgeHeight * 0.3;
+              ctx.beginPath();
+              ctx.moveTo(fridgeX, dividerY);
+              ctx.lineTo(fridgeX + fridgeWidth, dividerY);
+              ctx.stroke();
+              
+              // Handles
+              ctx.fillStyle = '#888';
+              ctx.fillRect(fridgeX + fridgeWidth - 5, fridgeY + fridgeHeight * 0.15, 3, 20);
+              ctx.fillRect(fridgeX + fridgeWidth - 5, fridgeY + fridgeHeight * 0.6, 3, 20);
+            }
+            else if (cabinet.cabinet_type.includes('ExhaustFan')) {
+              // Draw exhaust fan icon
+              const fanWidth = cabinetWidth * 0.7;
+              const fanHeight = Math.abs(cabinetDepth) * 0.4;
+              const fanX = cabinetX + (cabinetWidth - fanWidth) / 2;
+              const fanY = cabinetDepth * 0.2;
+              
+              // Fan housing
+              ctx.fillStyle = '#ccc';
+              ctx.fillRect(fanX, fanY, fanWidth, fanHeight);
+              ctx.strokeStyle = '#888';
+              ctx.strokeRect(fanX, fanY, fanWidth, fanHeight);
+              
+              // Vent lines
+              const vents = 5;
+              const ventSpacing = fanWidth / (vents + 1);
+              for (let i = 1; i <= vents; i++) {
+                ctx.beginPath();
+                ctx.moveTo(fanX + i * ventSpacing, fanY);
+                ctx.lineTo(fanX + i * ventSpacing, fanY + fanHeight);
+                ctx.stroke();
+              }
+            }
+          }
+          // For cabinet types with doors
+          else if (cabinet.cabinet_type.includes('Door')) {
             // Draw door division for double leaf doors
             if (cabinet.cabinet_type.includes('Double')) {
               ctx.beginPath();
@@ -4828,6 +5045,38 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
               ctx.arc(handleX, handleY, handleSize, 0, Math.PI * 2);
               ctx.fill();
             }
+          }
+          // Draw corner cabinets specially
+          else if (cabinet.cabinet_type.includes('Corner')) {
+            ctx.fillStyle = '#ddd';
+            
+            // Draw diagonal line for corner
+            ctx.beginPath();
+            ctx.moveTo(cabinetX, 0);
+            ctx.lineTo(cabinetX + cabinetWidth, cabinetDepth);
+            ctx.strokeStyle = '#888';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Draw direction arrow
+            const isLeft = cabinet.cabinet_type.includes('Left');
+            const arrowX = cabinetX + cabinetWidth / 2;
+            const arrowY = cabinetDepth / 2;
+            const arrowSize = 8;
+            
+            ctx.beginPath();
+            if (isLeft) {
+              ctx.moveTo(arrowX - arrowSize, arrowY);
+              ctx.lineTo(arrowX, arrowY - arrowSize);
+              ctx.lineTo(arrowX, arrowY + arrowSize);
+            } else {
+              ctx.moveTo(arrowX + arrowSize, arrowY);
+              ctx.lineTo(arrowX, arrowY - arrowSize);
+              ctx.lineTo(arrowX, arrowY + arrowSize);
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#888';
+            ctx.fill();
           }
           
           // Draw width label at bottom
@@ -5764,8 +6013,8 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                               />
                             </td>
                             <td className="px-4 py-2 whitespace-nowrap text-sm">
-                              <button
-                                onClick={() => removeCabinet(cabinet.id)}
+                            <button
+                                onClick={(e) => removeCabinet(cabinet.id, e)}
                                 className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
                               >
                                 Remove
