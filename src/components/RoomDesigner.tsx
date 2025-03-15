@@ -2101,123 +2101,6 @@ const calculateWallAlignment = (
     
     return bestSnap;
   };
-
-  // Apply run snap (for existing runs being dragged)
-
-  // const applyRunSnap = (
-  //   runId: string | null, 
-  //   mousePos: Point, 
-  //   currentRun?: CabinetRun
-  // ): void => {
-  //   // For clarity: If the user clicked at mousePos, we want to place
-  //   // the LEFT rear corner of the cabinet at this position
-    
-  //   // Create a temporary run at the clicked position
-  //   const runType = currentRun?.type || newRunType;
-  //   const runDepth = runType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
-    
-  //   const tempRun: CabinetRun = currentRun || {
-  //     id: 'temp',
-  //     start_pos_x: mousePos.x,  // Directly use mouse position as left rear corner
-  //     start_pos_y: mousePos.y,
-  //     length: DEFAULT_RUN_LENGTH,
-  //     depth: runDepth,
-  //     rotation_z: 0,
-  //     type: runType,
-  //     start_type: 'Open',
-  //     end_type: 'Open',
-  //     top_filler: false,
-  //     is_island: false
-  //   };
-    
-  //   // Find best wall to snap to
-  //   const snapResult = findBestWallSnap(tempRun);
-    
-  //   if (snapResult.shouldSnap) {
-  //     if (runId) {
-  //       // Update existing run
-  //       setCabinetRuns(prev => prev.map(run => {
-  //         if (run.id === runId) {
-  //           return {
-  //             ...run,
-  //             start_pos_x: snapResult.newX!,
-  //             start_pos_y: snapResult.newY!,
-  //             rotation_z: snapResult.newRotation!,
-  //             snapInfo: {
-  //               isSnapped: true,
-  //               snappedEdge: snapResult.snapEdge as 'rear' | undefined,
-  //               snappedToWall: snapResult.snapWall
-  //             }
-  //           };
-  //         }
-  //         return run;
-  //       }));
-  //     } else {
-  //       // Create new run with snap
-  //       const highestId = cabinetRuns.length > 0 
-  //         ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-  //         : 0;
-  //       const newRunId = (highestId + 1).toString();
-        
-  //       const newRun: CabinetRun = {
-  //         id: newRunId,
-  //         start_pos_x: mousePos.x,
-  //         start_pos_y: mousePos.y,
-  //         length: DEFAULT_RUN_LENGTH,
-  //         depth: runDepth,
-  //         rotation_z: currentRun?.rotation_z || 0, // Use exact rotation from current run, no snapping
-  //         type: runType,
-  //         start_type: 'Open',
-  //         end_type: 'Open',
-  //         top_filler: false,
-  //         is_island: false
-  //       };
-        
-  //       setCabinetRuns([...cabinetRuns, newRun]);
-  //       setSelectedRun(newRunId);
-  //     }
-  //   } else {
-  //     // No snap - just update or create at mouse position
-  //     if (runId) {
-  //       setCabinetRuns(prev => prev.map(run => {
-  //         if (run.id === runId) {
-  //           return {
-  //             ...run,
-  //             start_pos_x: mousePos.x,
-  //             start_pos_y: mousePos.y,
-  //             snapInfo: undefined
-  //           };
-  //         }
-  //         return run;
-  //       }));
-  //     } else {
-  //       // Create new run without snap
-  //       const highestId = cabinetRuns.length > 0 
-  //         ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
-  //         : 0;
-  //       const newRunId = (highestId + 1).toString();
-        
-  //       const newRun: CabinetRun = {
-  //         id: newRunId,
-  //         start_pos_x: mousePos.x,
-  //         start_pos_y: mousePos.y,
-  //         length: DEFAULT_RUN_LENGTH,
-  //         depth: runDepth,
-  //         rotation_z: currentRun?.rotation_z || 0,
-  //         type: runType,
-  //         start_type: 'Open',
-  //         end_type: 'Open',
-  //         top_filler: false,
-  //         is_island: false
-  //       };
-        
-  //       setCabinetRuns([...cabinetRuns, newRun]);
-  //       setSelectedRun(newRunId);
-  //     }
-  //   }
-    
-  //   setIsAddingRun(false);
-  // };
   
   // Calculate the snap position for a run during placement or dragging
   const calculateRunSnapPosition = (
@@ -2521,6 +2404,52 @@ const getAvailableCabinetTypes = (runType: 'Base' | 'Upper'): string[] => {
   }
 };
 
+// Helper function to get fixed widths for specific cabinet types
+const getFixedCabinetWidth = (cabinetType) => {
+  // Cabinet types with fixed 763mm width
+  if ([
+    'Base - Oven', 
+    'Base - Oven & Cooktop 30', 
+    'Base - Cooktop 30 & 3-Drawer', 
+    'Base - Sink & 3-Drawer',
+    'Tall - Warming & Oven & Micro & Leaf Door',
+    'Tall - Warming & Oven & Micro & Double Leaf Door',
+    'Wall - ExhaustFan - Integrated - 30x11 - Double Leaf Door'
+  ].includes(cabinetType)) {
+    return 763;
+  }
+  
+  // Cabinet types with fixed 950mm width
+  if ([
+    'Base - Cooktop 36 & 3-Drawer',
+    'Tall - Integrated Fridge_Freezer 36 & Double Leaf Door',
+    'Wall - ExhaustFan - Integrated - 36x11 - Double Leaf Door'
+  ].includes(cabinetType)) {
+    return 950;
+  }
+  
+  return null; // No fixed width
+};
+
+// Helper function to get minimum width for specific cabinet types
+const getMinCabinetWidth = (cabinetType) => {
+  // Cabinet types with minimum 600mm width
+  if ([
+    'Wall - Leaf Door Corner Pie Left',
+    'Wall - Leaf Door Corner Pie Right'
+  ].includes(cabinetType)) {
+    return 600;
+  }
+  
+  // Default minimum width
+  return 250;
+};
+
+// Helper function to check if a cabinet type has fixed width
+const hasFixedWidth = (cabinetType) => {
+  return getFixedCabinetWidth(cabinetType) !== null;
+};
+
 // Add a cabinet to a run
 const addCabinetToRun = (runId: string) => {
   const run = cabinetRuns.find(r => r.id === runId);
@@ -2529,6 +2458,14 @@ const addCabinetToRun = (runId: string) => {
   // Calculate position for new cabinet (sum of widths of existing cabinets in this run)
   const existingCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
   const position = existingCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
+  
+  // Get the selected cabinet type or use the first available type
+  const cabinetType = newCabinetType || getAvailableCabinetTypes(run.type)[0];
+  
+  // Determine the appropriate width based on cabinet type
+  const fixedWidth = getFixedCabinetWidth(cabinetType);
+  const minWidth = getMinCabinetWidth(cabinetType);
+  const width = fixedWidth !== null ? fixedWidth : Math.max(minWidth, newCabinetWidth);
   
   // Create a new cabinet
   const highestId = cabinets.length > 0 
@@ -2539,8 +2476,8 @@ const addCabinetToRun = (runId: string) => {
   const newCabinet: Cabinet = {
     id: newCabinetId,
     cabinet_run_id: runId,
-    cabinet_type: newCabinetType || getAvailableCabinetTypes(run.type)[0],
-    cabinet_width: newCabinetWidth,
+    cabinet_type: cabinetType,
+    cabinet_width: width,
     hinge_right: newCabinetHingeRight,
     material_doors: newCabinetMaterial,
     position: position
@@ -2630,13 +2567,49 @@ const updateCabinetProperty = (cabinetId: string, property: keyof Cabinet, value
   
   const runId = cabinet.cabinet_run_id;
   
-  setCabinets(prevCabinets => {
-    const updatedCabinets = prevCabinets.map(c => 
-      c.id === cabinetId ? { ...c, [property]: value } : c
-    );
+  // Handle special case for width properties or cabinet type change
+  if (property === 'cabinet_width' || property === 'cabinet_type') {
+    const cabinetType = property === 'cabinet_type' ? value : cabinet.cabinet_type;
     
-    // If width changed, we need to recalculate positions
-    if (property === 'cabinet_width') {
+    // Determine new width based on cabinet type
+    let newWidth = cabinet.cabinet_width;
+    
+    if (property === 'cabinet_type') {
+      // When changing cabinet type, apply fixed width if needed
+      const fixedWidth = getFixedCabinetWidth(cabinetType);
+      if (fixedWidth !== null) {
+        newWidth = fixedWidth;
+      } else {
+        // Apply minimum width constraints when switching to a type with minimum width
+        const minWidth = getMinCabinetWidth(cabinetType);
+        newWidth = Math.max(minWidth, cabinet.cabinet_width);
+      }
+    } else if (property === 'cabinet_width') {
+      // When manually changing width
+      const fixedWidth = getFixedCabinetWidth(cabinet.cabinet_type);
+      if (fixedWidth !== null) {
+        // Don't allow width changes for fixed-width cabinets
+        newWidth = fixedWidth;
+      } else {
+        // Apply minimum width constraint
+        const minWidth = getMinCabinetWidth(cabinet.cabinet_type);
+        newWidth = Math.max(minWidth, value);
+      }
+    }
+    
+    setCabinets(prevCabinets => {
+      const updatedCabinets = prevCabinets.map(c => {
+        if (c.id === cabinetId) {
+          return { 
+            ...c, 
+            [property]: property === 'cabinet_width' ? newWidth : value,
+            cabinet_width: newWidth 
+          };
+        }
+        return c;
+      });
+      
+      // Recalculate positions for all cabinets in the run
       const runCabinets = updatedCabinets
         .filter(c => c.cabinet_run_id === runId)
         .sort((a, b) => a.position - b.position);
@@ -2649,15 +2622,20 @@ const updateCabinetProperty = (cabinetId: string, property: keyof Cabinet, value
         currentPosition += c.cabinet_width;
         return { ...c, position: pos };
       });
-    }
+    });
     
+    // Update run length after width changes
+    setTimeout(() => updateRunLength(runId), 0);
+    return;
+  }
+  
+  // Handle other non-width properties normally
+  setCabinets(prevCabinets => {
+    const updatedCabinets = prevCabinets.map(c => 
+      c.id === cabinetId ? { ...c, [property]: value } : c
+    );
     return updatedCabinets;
   });
-  
-  // Update run length if width changed
-  if (property === 'cabinet_width') {
-    setTimeout(() => updateRunLength(runId), 0);
-  }
 };
 
 
@@ -5912,6 +5890,11 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
                           value={newCabinetWidth}
                           onChange={(e) => setNewCabinetWidth(Number(e.target.value))}
                           className="p-2 border border-gray-300 rounded"
+                          min={getMinCabinetWidth(newCabinetType || '')}
+                          disabled={hasFixedWidth(newCabinetType || '')}
+                          title={hasFixedWidth(newCabinetType || '') 
+                            ? "Width is fixed for this cabinet type" 
+                            : `Minimum width: ${getMinCabinetWidth(newCabinetType || '')}mm`}
                         />
                       </div>
                       
@@ -5950,81 +5933,86 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
               
               {cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? (
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead>
-                      <tr>
-                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Width</th>
-                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
-                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
-                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Hinge</th>
-                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {cabinets
-                        .filter(c => c.cabinet_run_id === selectedRun)
-                        .sort((a, b) => a.position - b.position)
-                        .map(cabinet => (
-                          <tr 
-                            key={cabinet.id}
-                            className={selectedCabinet === cabinet.id ? "bg-amber-50" : ""}
-                            onClick={() => setSelectedCabinet(cabinet.id)}
-                          >
-                            <td className="px-4 py-2 whitespace-nowrap text-sm">
-                              <select
-                                value={cabinet.cabinet_type}
-                                onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_type', e.target.value)}
-                                className="w-full px-2 py-1 border border-gray-300 rounded"
-                              >
-                                {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
-                                  <option key={type} value={type}>{type}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-4 py-2 whitespace-nowrap text-sm">
-                              <input
-                                type="number"
-                                value={cabinet.cabinet_width}
-                                onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_width', Number(e.target.value))}
-                                className="w-20 px-2 py-1 border border-gray-300 rounded"
-                              />
-                            </td>
-                            <td className="px-4 py-2 whitespace-nowrap text-sm">
-                              {cabinet.position}mm
-                            </td>
-                            <td className="px-4 py-2 whitespace-nowrap text-sm">
-                              <select
-                                value={cabinet.material_doors}
-                                onChange={(e) => updateCabinetProperty(cabinet.id, 'material_doors', e.target.value)}
-                                className="w-full px-2 py-1 border border-gray-300 rounded"
-                              >
-                                <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                                <option value="Paint - Gray">Paint - Gray</option>
-                              </select>
-                            </td>
-                            <td className="px-4 py-2 whitespace-nowrap text-sm">
-                              <input
-                                type="checkbox"
-                                checked={cabinet.hinge_right}
-                                onChange={(e) => updateCabinetProperty(cabinet.id, 'hinge_right', e.target.checked)}
-                                className="w-4 h-4 border border-gray-300 rounded"
-                                disabled={!cabinet.cabinet_type.includes('Door')}
-                              />
-                            </td>
-                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr>
+                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Width</th>
+                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
+                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Hinge</th>
+                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {cabinets
+                      .filter(c => c.cabinet_run_id === selectedRun)
+                      .sort((a, b) => a.position - b.position)
+                      .map(cabinet => (
+                        <tr 
+                          key={cabinet.id}
+                          className={selectedCabinet === cabinet.id ? "bg-amber-50" : ""}
+                          onClick={() => setSelectedCabinet(cabinet.id)}
+                        >
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            <select
+                              value={cabinet.cabinet_type}
+                              onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_type', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-300 rounded"
+                            >
+                              {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            <input
+                              type="number"
+                              value={cabinet.cabinet_width}
+                              onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_width', Number(e.target.value))}
+                              className="w-20 px-2 py-1 border border-gray-300 rounded"
+                              disabled={hasFixedWidth(cabinet.cabinet_type)}
+                              min={getMinCabinetWidth(cabinet.cabinet_type)}
+                              title={hasFixedWidth(cabinet.cabinet_type) 
+                                ? "Width is fixed for this cabinet type" 
+                                : `Minimum width: ${getMinCabinetWidth(cabinet.cabinet_type)}mm`}
+                            />
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            {cabinet.position}mm
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            <select
+                              value={cabinet.material_doors}
+                              onChange={(e) => updateCabinetProperty(cabinet.id, 'material_doors', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-300 rounded"
+                            >
+                              <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                              <option value="Paint - Gray">Paint - Gray</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            <input
+                              type="checkbox"
+                              checked={cabinet.hinge_right}
+                              onChange={(e) => updateCabinetProperty(cabinet.id, 'hinge_right', e.target.checked)}
+                              className="w-4 h-4 border border-gray-300 rounded"
+                              disabled={!cabinet.cabinet_type.includes('Door')}
+                            />
+                          </td>
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
                             <button
-                                onClick={(e) => removeCabinet(cabinet.id, e)}
-                                className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+                              onClick={(e) => removeCabinet(cabinet.id, e)}
+                              className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
               ) : (
                 <p className="text-gray-500">No cabinets in this run. Add a cabinet to get started.</p>
               )}
