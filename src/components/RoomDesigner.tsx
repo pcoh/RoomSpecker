@@ -2451,7 +2451,7 @@ const hasFixedWidth = (cabinetType) => {
 };
 
 // Add a cabinet to a run
-const addCabinetToRun = (runId: string) => {
+const addCabinetToRun = (runId) => {
   const run = cabinetRuns.find(r => r.id === runId);
   if (!run) return;
 
@@ -2473,7 +2473,7 @@ const addCabinetToRun = (runId: string) => {
     : 0;
   const newCabinetId = `cab${highestId + 1}`;
   
-  const newCabinet: Cabinet = {
+  const newCabinet = {
     id: newCabinetId,
     cabinet_run_id: runId,
     cabinet_type: cabinetType,
@@ -2483,25 +2483,41 @@ const addCabinetToRun = (runId: string) => {
     position: position
   };
   
-  // Add the cabinet
-  setCabinets([...cabinets, newCabinet]);
+  // First update the cabinets state
+  setCabinets(prevCabinets => {
+    const updatedCabinets = [...prevCabinets, newCabinet];
+    return updatedCabinets;
+  });
   
-  // Update run length to match total cabinet width
-  updateRunLength(runId);
+  // Then immediately update the run length
+  const newTotalWidth = [...cabinets, newCabinet]
+    .filter(c => c.cabinet_run_id === runId)
+    .reduce((sum, cab) => sum + cab.cabinet_width, 0);
+  
+  setCabinetRuns(prevRuns => prevRuns.map(run => 
+    run.id === runId ? { ...run, length: newTotalWidth } : run
+  ));
   
   // Reset new cabinet form
   setIsAddingCabinet(false);
 };
 
 // Update the length of a run based on its cabinets
-const updateRunLength = (runId: string) => {
+const updateRunLength = (runId) => {
   const runCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
-  const totalWidth = runCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
   
-  // Only update if cabinets exist and the calculated width is greater than zero
-  if (runCabinets.length > 0 && totalWidth > 0) {
+  if (runCabinets.length > 0) {
+    // Calculate total width by summing all cabinet widths
+    const totalWidth = runCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
+    
+    // Update run length to match total cabinet width
     setCabinetRuns(prevRuns => prevRuns.map(run => 
       run.id === runId ? { ...run, length: totalWidth } : run
+    ));
+  } else {
+    // If no cabinets, set run to default length
+    setCabinetRuns(prevRuns => prevRuns.map(run => 
+      run.id === runId ? { ...run, length: DEFAULT_RUN_LENGTH } : run
     ));
   }
 };
@@ -2522,10 +2538,6 @@ const removeCabinet = (cabinetId, event) => {
   const updatedCabinets = cabinets.filter(c => c.id !== cabinetId);
   
   // Recalculate positions for remaining cabinets in the run
-  const runCabinets = updatedCabinets
-    .filter(c => c.cabinet_run_id === runId)
-    .sort((a, b) => a.position - b.position);
-  
   let currentPosition = 0;
   const finalCabinets = updatedCabinets.map(c => {
     if (c.cabinet_run_id !== runId) return c;
@@ -2543,25 +2555,22 @@ const removeCabinet = (cabinetId, event) => {
     setSelectedCabinet(null);
   }
   
-  // Update the run length
-  // Calculate the new length directly from the filtered cabinets
-  const totalWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+  // Get remaining cabinets in this run
+  const remainingRunCabinets = finalCabinets.filter(c => c.cabinet_run_id === runId);
   
-  // Only update run length if there are cabinets or the total width is greater than zero
-  if (runCabinets.length > 0 && totalWidth > 0) {
-    setCabinetRuns(prevRuns => prevRuns.map(run => 
-      run.id === runId ? { ...run, length: totalWidth } : run
-    ));
-  } else if (runCabinets.length === 0) {
-    // If no cabinets left, set run to default length
-    setCabinetRuns(prevRuns => prevRuns.map(run => 
-      run.id === runId ? { ...run, length: DEFAULT_RUN_LENGTH } : run
-    ));
-  }
+  // Calculate new total width (or use default if no cabinets left)
+  const newTotalWidth = remainingRunCabinets.length > 0
+    ? remainingRunCabinets.reduce((sum, c) => sum + c.cabinet_width, 0)
+    : DEFAULT_RUN_LENGTH;
+  
+  // Update the run length immediately
+  setCabinetRuns(prevRuns => prevRuns.map(run => 
+    run.id === runId ? { ...run, length: newTotalWidth } : run
+  ));
 };
 
 // Update cabinet properties
-const updateCabinetProperty = (cabinetId: string, property: keyof Cabinet, value: any) => {
+const updateCabinetProperty = (cabinetId, property, value) => {
   const cabinet = cabinets.find(c => c.id === cabinetId);
   if (!cabinet) return;
   
@@ -2598,6 +2607,7 @@ const updateCabinetProperty = (cabinetId: string, property: keyof Cabinet, value
     }
     
     setCabinets(prevCabinets => {
+      // Create updated cabinets array with the modified cabinet
       const updatedCabinets = prevCabinets.map(c => {
         if (c.id === cabinetId) {
           return { 
@@ -2615,17 +2625,27 @@ const updateCabinetProperty = (cabinetId: string, property: keyof Cabinet, value
         .sort((a, b) => a.position - b.position);
       
       let currentPosition = 0;
-      return updatedCabinets.map(c => {
+      const repositionedCabinets = updatedCabinets.map(c => {
         if (c.cabinet_run_id !== runId) return c;
         
         const pos = currentPosition;
         currentPosition += c.cabinet_width;
         return { ...c, position: pos };
       });
+      
+      // Calculate the new total width for the run
+      const newTotalWidth = repositionedCabinets
+        .filter(c => c.cabinet_run_id === runId)
+        .reduce((sum, cab) => sum + cab.cabinet_width, 0);
+      
+      // Update the run length immediately
+      setCabinetRuns(prevRuns => prevRuns.map(run => 
+        run.id === runId ? { ...run, length: newTotalWidth } : run
+      ));
+      
+      return repositionedCabinets;
     });
     
-    // Update run length after width changes
-    setTimeout(() => updateRunLength(runId), 0);
     return;
   }
   
