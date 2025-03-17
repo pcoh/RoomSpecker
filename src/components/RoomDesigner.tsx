@@ -242,6 +242,8 @@ const RoomDesigner: React.FC = () => {
   const [newCabinetWidth, setNewCabinetWidth] = useState<number>(600); // Default width
   const [newCabinetHingeRight, setNewCabinetHingeRight] = useState<boolean>(true);
   const [newCabinetMaterial, setNewCabinetMaterial] = useState<string>('WhiteOak_SlipMatch');
+  const True = true;
+  const False = false;
   
 
 
@@ -2934,7 +2936,6 @@ const updateCabinetProperty = (cabinetId, property, value) => {
 const exportRoomData = () => {
   // Create the export data structure directly from the existing room data
   const exportData = rooms.map(room => {
-    // Existing room export logic remains the same
     return {
       id: room.id,
       isMain: room.isMain,
@@ -3015,22 +3016,32 @@ const exportRoomData = () => {
     }
   };
 
-  // Convert to JSON string with 2-space indentation
-  const jsonData = JSON.stringify(exportObject, null, 2);
+  // Convert to JSON string
+  let jsonData = JSON.stringify(exportObject, null, 2);
+
+  // Replace "true" and "false" with True and False
+  jsonData = jsonData.replace(/true/g, 'True').replace(/false/g, 'False');
   
-  // Use the Clipboard API with a more robust approach
-  if (navigator.clipboard) {
+  try {
     navigator.clipboard.writeText(jsonData)
       .then(() => {
         alert('Room data copied to clipboard!');
       })
       .catch(err => {
         console.error('Failed to copy data: ', err);
-        fallbackCopyTextToClipboard(jsonData);
+        alert('Unable to automatically copy. Please use Ctrl+C to copy the data manually.');
+        
+        const textArea = document.createElement('textarea');
+        textArea.value = jsonData;
+        document.body.appendChild(textArea);
+        textArea.select();
+        textArea.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
       });
-  } else {
-    // Fallback for browsers without clipboard API
-    fallbackCopyTextToClipboard(jsonData);
+  } catch (err) {
+    console.error('Export failed: ', err);
+    alert('Export failed. Please check the console for details.');
   }
 
   return jsonData;
