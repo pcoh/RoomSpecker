@@ -2279,7 +2279,7 @@ const createCabinetRun = (position: Point) => {
 
 // Update a cabinet run property
 const updateRunProperty = (id, property, value) => {
-  // Handle the start_type change case specially
+  // Handle start_type changes specifically
   if (property === 'start_type') {
     // Get the current run and its state
     const currentRun = cabinetRuns.find(r => r.id === id);
@@ -2346,7 +2346,61 @@ const updateRunProperty = (id, property, value) => {
     }
   }
   
-  // For all other properties, or if no cabinet position changes were needed
+  // Handle end_type changes specifically
+  if (property === 'end_type') {
+    // Get the current run and its state
+    const currentRun = cabinetRuns.find(r => r.id === id);
+    if (!currentRun) return;
+    
+    const newEndType = value;
+    const currentEndType = currentRun.end_type;
+    
+    // Only process if there's an actual change
+    if (newEndType !== currentEndType) {
+      // Get all cabinets in this run
+      const runCabinets = cabinets.filter(c => c.cabinet_run_id === id);
+      
+      // Calculate the current cabinet width total
+      const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+      
+      // Get start filler width (unchanged)
+      const startFillerWidth = currentRun.start_type === 'Wall' ? FILLER_WIDTH : 0;
+      
+      // If changing from Open to Wall, add end filler
+      if (newEndType === 'Wall' && currentEndType === 'Open') {
+        // Just update the run with new end_type and increased length
+        setCabinetRuns(prevRuns => prevRuns.map(run => 
+          run.id === id 
+            ? { 
+                ...run, 
+                end_type: newEndType,
+                length: totalCabinetWidth + startFillerWidth + FILLER_WIDTH 
+              } 
+            : run
+        ));
+        
+        return; // Exit early, we've handled the update
+      }
+      
+      // If changing from Wall to Open, remove end filler
+      if (newEndType === 'Open' && currentEndType === 'Wall') {
+        // Just update the run with new end_type and decreased length
+        setCabinetRuns(prevRuns => prevRuns.map(run => 
+          run.id === id 
+            ? { 
+                ...run, 
+                end_type: newEndType,
+                length: totalCabinetWidth + startFillerWidth 
+              } 
+            : run
+        ));
+        
+        return; // Exit early, we've handled the update
+      }
+    }
+  }
+  
+  // For all other properties, or if no change was needed
   setCabinetRuns(prevRuns => prevRuns.map(run => {
     if (run.id !== id) return run;
     
@@ -2371,7 +2425,7 @@ const updateRunProperty = (id, property, value) => {
       };
     }
     
-    // Default handling for other properties (including start_type when cabinets don't need repositioning)
+    // Default handling for other properties
     return { ...run, [property]: value };
   }));
 };
@@ -2616,8 +2670,9 @@ const addCabinetToRun = (runId) => {
     // Calculate the new run length immediately after updating cabinets
     const runCabinets = newCabinets.filter(c => c.cabinet_run_id === runId);
     const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
-    const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
-    const newRunLength = totalCabinetWidth + fillerWidthToAdd;
+    const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    const endFillerWidth = run.end_type === 'Wall' ? FILLER_WIDTH : 0;
+    const newRunLength = totalCabinetWidth + startFillerWidth + endFillerWidth;
     
     // Update the run length directly in the same operation
     setCabinetRuns(prevRuns => prevRuns.map(r => 
@@ -2643,12 +2698,13 @@ const updateRunLength = (runId) => {
     // Calculate total cabinet width
     const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
     
-    // Add filler width if start_type is 'Wall'
-    const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    // Add filler width if start_type or end_type is 'Wall'
+    const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    const endFillerWidth = run.end_type === 'Wall' ? FILLER_WIDTH : 0;
     
-    // Update run length to match total cabinet width plus filler
+    // Update run length to match total cabinet width plus fillers
     setCabinetRuns(prevRuns => prevRuns.map(r => 
-      r.id === runId ? { ...r, length: totalCabinetWidth + fillerWidthToAdd } : r
+      r.id === runId ? { ...r, length: totalCabinetWidth + startFillerWidth + endFillerWidth } : r
     ));
   } else {
     // If no cabinets, set run to default length
@@ -2745,12 +2801,13 @@ const removeCabinet = (cabinetId, event) => {
     
     // Calculate new total width
     const totalCabinetWidth = remainingCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
-    const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    const endFillerWidth = run.end_type === 'Wall' ? FILLER_WIDTH : 0;
     
     // Update run length immediately
     setCabinetRuns(prevRuns => prevRuns.map(r => 
       r.id === runId 
-        ? { ...r, length: remainingCabinets.length > 0 ? totalCabinetWidth + fillerWidthToAdd : DEFAULT_RUN_LENGTH }
+        ? { ...r, length: remainingCabinets.length > 0 ? totalCabinetWidth + startFillerWidth + endFillerWidth : DEFAULT_RUN_LENGTH }
         : r
     ));
     
@@ -2816,13 +2873,16 @@ const updateCabinetProperty = (cabinetId, property, value) => {
         return c;
       });
       
+      // Get the latest run data to ensure we have current start_type and end_type
+      const currentRun = cabinetRuns.find(r => r.id === runId);
+      
       // Reposition all cabinets in the run
       const runCabinets = updatedCabinets
         .filter(c => c.cabinet_run_id === runId)
         .sort((a, b) => a.position - b.position);
       
       // Start position depends on run's start_type
-      let currentPosition = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+      let currentPosition = currentRun.start_type === 'Wall' ? FILLER_WIDTH : 0;
       
       // Update the positions of all cabinets in the run
       const repositionedCabinets = updatedCabinets.map(c => {
@@ -2834,13 +2894,9 @@ const updateCabinetProperty = (cabinetId, property, value) => {
         
         // If this is not the first cabinet, position it after all previous cabinets
         if (index > 0) {
-          currentPosition = 0;
+          currentPosition = currentRun.start_type === 'Wall' ? FILLER_WIDTH : 0;
           for (let i = 0; i < index; i++) {
             currentPosition += runCabinets[i].cabinet_width;
-          }
-          // Add the starting offset for Wall type
-          if (run.start_type === 'Wall') {
-            currentPosition += FILLER_WIDTH;
           }
         }
         
@@ -2850,12 +2906,13 @@ const updateCabinetProperty = (cabinetId, property, value) => {
       // Calculate the new total width for the run
       const newTotalWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
       
-      // Add filler width if start_type is 'Wall'
-      const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+      // Get filler widths
+      const startFillerWidth = currentRun.start_type === 'Wall' ? FILLER_WIDTH : 0;
+      const endFillerWidth = currentRun.end_type === 'Wall' ? FILLER_WIDTH : 0;
       
       // Update the run length immediately
       setCabinetRuns(prevRuns => prevRuns.map(r => 
-        r.id === runId ? { ...r, length: newTotalWidth + fillerWidthToAdd } : r
+        r.id === runId ? { ...r, length: newTotalWidth + startFillerWidth + endFillerWidth } : r
       ));
       
       return repositionedCabinets;
@@ -4897,27 +4954,53 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.fillText('FILLER', 0, 0);
         ctx.restore();
       }
-      
-      // Draw visual cues for start and end types
-      if (run.start_type === 'Wall') {
-        // Draw wall indicator at start
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(0, -height);
-        ctx.strokeStyle = '#6b7280';
-        ctx.lineWidth = 4;
-        ctx.stroke();
-      }
-      
+
       if (run.end_type === 'Wall') {
-        // Draw wall indicator at end
-        ctx.beginPath();
-        ctx.moveTo(width, 0);
-        ctx.lineTo(width, -height);
-        ctx.strokeStyle = '#6b7280';
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        const fillerWidth = FILLER_WIDTH * scale;
+        
+        // Calculate where the cabinets end and filler starts
+        const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+        const totalCabinetsWidth = run.length - startFillerWidth - FILLER_WIDTH; // Subtract both fillers
+        const cabinetsEndX = (startFillerWidth + totalCabinetsWidth) * scale;
+        
+        // Draw end filler
+        ctx.fillStyle = 'rgba(180, 180, 180, 0.7)'; // Gray color for filler
+        ctx.fillRect(cabinetsEndX, 0, fillerWidth, -height);
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cabinetsEndX, 0, fillerWidth, -height);
+        
+        // Add filler label
+        ctx.save();
+        ctx.translate(cabinetsEndX + fillerWidth / 2, -height / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#000';
+        ctx.textAlign = 'center';
+        ctx.fillText('FILLER', 0, 0);
+        ctx.restore();
       }
+      
+      // // Draw visual cues for start and end types
+      // if (run.start_type === 'Wall') {
+      //   // Draw wall indicator at start
+      //   ctx.beginPath();
+      //   ctx.moveTo(0, 0);
+      //   ctx.lineTo(0, -height);
+      //   ctx.strokeStyle = '#6b7280';
+      //   ctx.lineWidth = 4;
+      //   ctx.stroke();
+      // }
+      
+      // if (run.end_type === 'Wall') {
+      //   // Draw wall indicator at end
+      //   ctx.beginPath();
+      //   ctx.moveTo(width, 0);
+      //   ctx.lineTo(width, -height);
+      //   ctx.strokeStyle = '#6b7280';
+      //   ctx.lineWidth = 4;
+      //   ctx.stroke();
+      // }
       
       // Draw top filler indicator if applicable
       if (run.top_filler) {
