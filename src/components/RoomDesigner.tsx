@@ -184,6 +184,8 @@ const SNAP_DISTANCE_MM = 50; // Distance in mm to snap to walls
 const SNAP_ANGLE_THRESHOLD = 5; // Degrees threshold for angular snapping
 const SNAP_ROTATION_INCREMENT = 0.01; // Snap rotation to 90-degree increments
 
+const FILLER_WIDTH = 50; // 50mm filler width
+
 
 const RoomDesigner: React.FC = () => {
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -2276,13 +2278,81 @@ const createCabinetRun = (position: Point) => {
 };
 
 // Update a cabinet run property
-const updateRunProperty = (id: string, property: keyof CabinetRun, value: any) => {
+const updateRunProperty = (id, property, value) => {
+  // Handle the start_type change case specially
+  if (property === 'start_type') {
+    // Get the current run and its state
+    const currentRun = cabinetRuns.find(r => r.id === id);
+    if (!currentRun) return;
+    
+    const newStartType = value;
+    const currentStartType = currentRun.start_type;
+    
+    // Only process if there's an actual change
+    if (newStartType !== currentStartType) {
+      // Get all cabinets in this run
+      const runCabinets = cabinets.filter(c => c.cabinet_run_id === id);
+      
+      if (runCabinets.length > 0) {
+        // Find the minimum cabinet position
+        const minPosition = Math.min(...runCabinets.map(c => c.position));
+        
+        // If changing from Open to Wall and cabinets start at position 0
+        if (newStartType === 'Wall' && currentStartType === 'Open' && minPosition === 0) {
+          // Update the run first
+          setCabinetRuns(prevRuns => prevRuns.map(run => 
+            run.id === id 
+              ? { 
+                  ...run, 
+                  start_type: newStartType,
+                  length: run.length + FILLER_WIDTH 
+                } 
+              : run
+          ));
+          
+          // Then shift all cabinets right
+          setCabinets(prevCabinets => prevCabinets.map(cab => 
+            cab.cabinet_run_id === id
+              ? { ...cab, position: cab.position + FILLER_WIDTH }
+              : cab
+          ));
+          
+          return; // Exit early, we've handled the update
+        }
+        
+        // If changing from Wall to Open and cabinets start at FILLER_WIDTH
+        if (newStartType === 'Open' && currentStartType === 'Wall' && minPosition === FILLER_WIDTH) {
+          // Update the run first
+          setCabinetRuns(prevRuns => prevRuns.map(run => 
+            run.id === id 
+              ? { 
+                  ...run, 
+                  start_type: newStartType,
+                  length: Math.max(0, run.length - FILLER_WIDTH)
+                } 
+              : run
+          ));
+          
+          // Then shift all cabinets left
+          setCabinets(prevCabinets => prevCabinets.map(cab => 
+            cab.cabinet_run_id === id
+              ? { ...cab, position: Math.max(0, cab.position - FILLER_WIDTH) }
+              : cab
+          ));
+          
+          return; // Exit early, we've handled the update
+        }
+      }
+    }
+  }
+  
+  // For all other properties, or if no cabinet position changes were needed
   setCabinetRuns(prevRuns => prevRuns.map(run => {
     if (run.id !== id) return run;
     
     // Special handling for type property to update depth if custom depth is not set
     if (property === 'type' && !customDepthRuns[id]) {
-      const newType = value as 'Base' | 'Upper';
+      const newType = value;
       const newDepth = newType === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
       return { 
         ...run, 
@@ -2301,7 +2371,7 @@ const updateRunProperty = (id: string, property: keyof CabinetRun, value: any) =
       };
     }
     
-    // Default handling for other properties
+    // Default handling for other properties (including start_type when cabinets don't need repositioning)
     return { ...run, [property]: value };
   }));
 };
@@ -2362,7 +2432,46 @@ const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => 
   }));
 };
 
-// Get available cabinet types based on run type
+const debugCabinetPositions = (runId) => {
+  const run = cabinetRuns.find(r => r.id === runId);
+  if (!run) {
+    console.log('Run not found');
+    return;
+  }
+  
+  const runCabinets = cabinets
+    .filter(c => c.cabinet_run_id === runId)
+    .sort((a, b) => a.position - b.position);
+  
+  console.log(`Run ${runId} - Start Type: ${run.start_type}, Length: ${run.length}mm`);
+  console.log(`Filler Width: ${run.start_type === 'Wall' ? FILLER_WIDTH : 0}mm`);
+  
+  if (runCabinets.length === 0) {
+    console.log('No cabinets in this run');
+  } else {
+    runCabinets.forEach((cab, index) => {
+      console.log(`Cabinet ${cab.id}: Position = ${cab.position}mm, Width = ${cab.cabinet_width}mm, End = ${cab.position + cab.cabinet_width}mm`);
+    });
+    
+    const calculatedLength = runCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0) + 
+                            (run.start_type === 'Wall' ? FILLER_WIDTH : 0);
+    console.log(`Calculated run length: ${calculatedLength}mm, Stored run length: ${run.length}mm`);
+  }
+};
+
+const monitoredUpdateRunProperty = (id, property, value) => {
+  // Call the original function
+  updateRunProperty(id, property, value);
+  
+  // If updating start_type, debug the cabinet positions after a brief delay
+  if (property === 'start_type') {
+    setTimeout(() => {
+      console.log(`After changing start_type to ${value}:`);
+      debugCabinetPositions(id);
+    }, 100);
+  }
+};
+
 // Get available cabinet types based on run type
 const getAvailableCabinetTypes = (runType: 'Base' | 'Upper'): string[] => {
   if (runType === 'Base') {
@@ -2452,12 +2561,29 @@ const hasFixedWidth = (cabinetType) => {
 
 // Add a cabinet to a run
 const addCabinetToRun = (runId) => {
+  // Get the current run
   const run = cabinetRuns.find(r => r.id === runId);
   if (!run) return;
 
-  // Calculate position for new cabinet (sum of widths of existing cabinets in this run)
+  // Get existing cabinets in this run
   const existingCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
-  const position = existingCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
+  
+  // Calculate position for new cabinet
+  let position;
+  
+  if (existingCabinets.length === 0) {
+    // First cabinet - position directly depends on start_type
+    position = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+  } else {
+    // Find the rightmost cabinet and place after it
+    const rightmostCabinet = existingCabinets.reduce((rightmost, current) => {
+      const currentEnd = current.position + current.cabinet_width;
+      const rightmostEnd = rightmost.position + rightmost.cabinet_width;
+      return currentEnd > rightmostEnd ? current : rightmost;
+    }, existingCabinets[0]);
+    
+    position = rightmostCabinet.position + rightmostCabinet.cabinet_width;
+  }
   
   // Get the selected cabinet type or use the first available type
   const cabinetType = newCabinetType || getAvailableCabinetTypes(run.type)[0];
@@ -2485,42 +2611,104 @@ const addCabinetToRun = (runId) => {
   
   // First update the cabinets state
   setCabinets(prevCabinets => {
-    const updatedCabinets = [...prevCabinets, newCabinet];
-    return updatedCabinets;
+    const newCabinets = [...prevCabinets, newCabinet];
+    
+    // Calculate the new run length immediately after updating cabinets
+    const runCabinets = newCabinets.filter(c => c.cabinet_run_id === runId);
+    const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+    const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    const newRunLength = totalCabinetWidth + fillerWidthToAdd;
+    
+    // Update the run length directly in the same operation
+    setCabinetRuns(prevRuns => prevRuns.map(r => 
+      r.id === runId ? { ...r, length: newRunLength } : r
+    ));
+    
+    return newCabinets;
   });
-  
-  // Then immediately update the run length
-  const newTotalWidth = [...cabinets, newCabinet]
-    .filter(c => c.cabinet_run_id === runId)
-    .reduce((sum, cab) => sum + cab.cabinet_width, 0);
-  
-  setCabinetRuns(prevRuns => prevRuns.map(run => 
-    run.id === runId ? { ...run, length: newTotalWidth } : run
-  ));
   
   // Reset new cabinet form
   setIsAddingCabinet(false);
 };
 
+
 // Update the length of a run based on its cabinets
 const updateRunLength = (runId) => {
+  const run = cabinetRuns.find(r => r.id === runId);
+  if (!run) return;
+  
   const runCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
   
   if (runCabinets.length > 0) {
-    // Calculate total width by summing all cabinet widths
-    const totalWidth = runCabinets.reduce((sum, cab) => sum + cab.cabinet_width, 0);
+    // Calculate total cabinet width
+    const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
     
-    // Update run length to match total cabinet width
-    setCabinetRuns(prevRuns => prevRuns.map(run => 
-      run.id === runId ? { ...run, length: totalWidth } : run
+    // Add filler width if start_type is 'Wall'
+    const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    
+    // Update run length to match total cabinet width plus filler
+    setCabinetRuns(prevRuns => prevRuns.map(r => 
+      r.id === runId ? { ...r, length: totalCabinetWidth + fillerWidthToAdd } : r
     ));
   } else {
     // If no cabinets, set run to default length
-    setCabinetRuns(prevRuns => prevRuns.map(run => 
-      run.id === runId ? { ...run, length: DEFAULT_RUN_LENGTH } : run
+    setCabinetRuns(prevRuns => prevRuns.map(r => 
+      r.id === runId ? { ...r, length: DEFAULT_RUN_LENGTH } : r
     ));
   }
 };
+
+const reorderCabinets = (runId) => {
+  const run = cabinetRuns.find(r => r.id === runId);
+  if (!run) return;
+  
+  // Start position depends on start_type
+  const startPos = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+  
+  // Get and sort cabinets in this run
+  const runCabinets = cabinets
+    .filter(c => c.cabinet_run_id === runId)
+    .sort((a, b) => a.position - b.position);
+  
+  if (runCabinets.length === 0) {
+    // If no cabinets, just ensure the run length is correct
+    setCabinetRuns(prevRuns => prevRuns.map(r => 
+      r.id === runId ? { ...r, length: DEFAULT_RUN_LENGTH } : r
+    ));
+    return;
+  }
+  
+  // Recalculate positions
+  let currentPosition = startPos;
+  const updatedCabinets = runCabinets.map(cabinet => {
+    const newCabinet = { ...cabinet, position: currentPosition };
+    currentPosition += cabinet.cabinet_width;
+    return newCabinet;
+  });
+  
+  // Update cabinet positions
+  setCabinets(prevCabinets => {
+    // Create a mapping of cabinet IDs to their updated versions
+    const updatedMap = {};
+    updatedCabinets.forEach(cab => {
+      updatedMap[cab.id] = cab;
+    });
+    
+    // Replace each cabinet with its updated version if it exists
+    return prevCabinets.map(cab => 
+      updatedMap[cab.id] ? updatedMap[cab.id] : cab
+    );
+  });
+  
+  // Calculate and update run length
+  const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+  const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+  
+  setCabinetRuns(prevRuns => prevRuns.map(r => 
+    r.id === runId ? { ...r, length: totalCabinetWidth + fillerWidthToAdd } : r
+  ));
+};
+
 
 // Remove a cabinet
 const removeCabinet = (cabinetId, event) => {
@@ -2533,40 +2721,46 @@ const removeCabinet = (cabinetId, event) => {
   if (!cabinet) return;
   
   const runId = cabinet.cabinet_run_id;
+  const run = cabinetRuns.find(r => r.id === runId);
+  if (!run) return;
   
-  // Create a new array without the removed cabinet
-  const updatedCabinets = cabinets.filter(c => c.id !== cabinetId);
-  
-  // Recalculate positions for remaining cabinets in the run
-  let currentPosition = 0;
-  const finalCabinets = updatedCabinets.map(c => {
-    if (c.cabinet_run_id !== runId) return c;
+  // Remove the cabinet
+  setCabinets(prevCabinets => {
+    const updatedCabinets = prevCabinets.filter(c => c.id !== cabinetId);
     
-    const position = currentPosition;
-    currentPosition += c.cabinet_width;
-    return { ...c, position };
+    // Get remaining cabinets in this run
+    const remainingCabinets = updatedCabinets.filter(c => c.cabinet_run_id === runId)
+      .sort((a, b) => a.position - b.position);
+    
+    // Reposition all remaining cabinets
+    let currentPosition = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    
+    const repositionedCabinets = updatedCabinets.map(c => {
+      if (c.cabinet_run_id !== runId) return c;
+      
+      const newCabinet = { ...c, position: currentPosition };
+      currentPosition += c.cabinet_width;
+      return newCabinet;
+    });
+    
+    // Calculate new total width
+    const totalCabinetWidth = remainingCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+    const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+    
+    // Update run length immediately
+    setCabinetRuns(prevRuns => prevRuns.map(r => 
+      r.id === runId 
+        ? { ...r, length: remainingCabinets.length > 0 ? totalCabinetWidth + fillerWidthToAdd : DEFAULT_RUN_LENGTH }
+        : r
+    ));
+    
+    return repositionedCabinets;
   });
-  
-  // Update state with the new cabinets array
-  setCabinets(finalCabinets);
   
   // If the selected cabinet was removed, clear the selection
   if (selectedCabinet === cabinetId) {
     setSelectedCabinet(null);
   }
-  
-  // Get remaining cabinets in this run
-  const remainingRunCabinets = finalCabinets.filter(c => c.cabinet_run_id === runId);
-  
-  // Calculate new total width (or use default if no cabinets left)
-  const newTotalWidth = remainingRunCabinets.length > 0
-    ? remainingRunCabinets.reduce((sum, c) => sum + c.cabinet_width, 0)
-    : DEFAULT_RUN_LENGTH;
-  
-  // Update the run length immediately
-  setCabinetRuns(prevRuns => prevRuns.map(run => 
-    run.id === runId ? { ...run, length: newTotalWidth } : run
-  ));
 };
 
 // Update cabinet properties
@@ -2575,6 +2769,8 @@ const updateCabinetProperty = (cabinetId, property, value) => {
   if (!cabinet) return;
   
   const runId = cabinet.cabinet_run_id;
+  const run = cabinetRuns.find(r => r.id === runId);
+  if (!run) return;
   
   // Handle special case for width properties or cabinet type change
   if (property === 'cabinet_width' || property === 'cabinet_type') {
@@ -2606,8 +2802,9 @@ const updateCabinetProperty = (cabinetId, property, value) => {
       }
     }
     
+    // Update the cabinets state with the new width
     setCabinets(prevCabinets => {
-      // Create updated cabinets array with the modified cabinet
+      // Create a new cabinets array with the updated cabinet
       const updatedCabinets = prevCabinets.map(c => {
         if (c.id === cabinetId) {
           return { 
@@ -2619,28 +2816,46 @@ const updateCabinetProperty = (cabinetId, property, value) => {
         return c;
       });
       
-      // Recalculate positions for all cabinets in the run
+      // Reposition all cabinets in the run
       const runCabinets = updatedCabinets
         .filter(c => c.cabinet_run_id === runId)
         .sort((a, b) => a.position - b.position);
       
-      let currentPosition = 0;
+      // Start position depends on run's start_type
+      let currentPosition = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+      
+      // Update the positions of all cabinets in the run
       const repositionedCabinets = updatedCabinets.map(c => {
         if (c.cabinet_run_id !== runId) return c;
         
-        const pos = currentPosition;
-        currentPosition += c.cabinet_width;
-        return { ...c, position: pos };
+        // Find this cabinet in the sorted list
+        const index = runCabinets.findIndex(rc => rc.id === c.id);
+        if (index < 0) return c; // Should never happen
+        
+        // If this is not the first cabinet, position it after all previous cabinets
+        if (index > 0) {
+          currentPosition = 0;
+          for (let i = 0; i < index; i++) {
+            currentPosition += runCabinets[i].cabinet_width;
+          }
+          // Add the starting offset for Wall type
+          if (run.start_type === 'Wall') {
+            currentPosition += FILLER_WIDTH;
+          }
+        }
+        
+        return { ...c, position: currentPosition };
       });
       
       // Calculate the new total width for the run
-      const newTotalWidth = repositionedCabinets
-        .filter(c => c.cabinet_run_id === runId)
-        .reduce((sum, cab) => sum + cab.cabinet_width, 0);
+      const newTotalWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
+      
+      // Add filler width if start_type is 'Wall'
+      const fillerWidthToAdd = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
       
       // Update the run length immediately
-      setCabinetRuns(prevRuns => prevRuns.map(run => 
-        run.id === runId ? { ...run, length: newTotalWidth } : run
+      setCabinetRuns(prevRuns => prevRuns.map(r => 
+        r.id === runId ? { ...r, length: newTotalWidth + fillerWidthToAdd } : r
       ));
       
       return repositionedCabinets;
@@ -4663,6 +4878,26 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
       ctx.stroke();
       ctx.setLineDash([]); // Reset dash pattern for subsequent drawing
       
+      // Show filler if start type is Wall
+      if (run.start_type === 'Wall') {
+        const fillerWidth = FILLER_WIDTH * scale;
+        ctx.fillStyle = 'rgba(180, 180, 180, 0.7)'; // Gray color for filler
+        ctx.fillRect(0, 0, fillerWidth, -height);
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0, 0, fillerWidth, -height);
+        
+        // Add filler label
+        ctx.save();
+        ctx.translate(fillerWidth / 2, -height / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.font = '10px Arial';
+        ctx.fillStyle = '#000';
+        ctx.textAlign = 'center';
+        ctx.fillText('FILLER', 0, 0);
+        ctx.restore();
+      }
+      
       // Draw visual cues for start and end types
       if (run.start_type === 'Wall') {
         // Draw wall indicator at start
@@ -4764,7 +4999,7 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
           } else if (cabinet.cabinet_type.startsWith('CounterTop - ')) {
             shortLabel = cabinet.cabinet_type.replace('CounterTop - ', 'CT-');
           }
-
+  
           // Further abbreviate common terms
           shortLabel = shortLabel
             .replace('Double Leaf Door', 'DblDr')
@@ -4775,18 +5010,22 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             .replace('ExhaustFan', 'Exhst')
             .replace('Cooktop', 'Cktop')
             .replace('Corner', 'Cnr');
-
+  
           // If still too long, truncate
           if (shortLabel.length > 12) {
             shortLabel = shortLabel.substring(0, 12) + '...';
           }
           
-          // Draw the label
-          // ctx.fillText(
-          //   shortLabel, 
-          //   cabinetX + cabinetWidth / 2, 
-          //   cabinetDepth / 2
-          // );
+          // Draw width label at bottom
+          ctx.font = '9px Arial';
+          ctx.fillStyle = '#444';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(
+            `${Math.round(cabinet.cabinet_width)}mm`, 
+            cabinetX + cabinetWidth / 2, 
+            0
+          );
           
           // Draw hinge markers if applicable
           if (cabinet.cabinet_type.includes('Door')) {
@@ -5076,17 +5315,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
             ctx.fillStyle = '#888';
             ctx.fill();
           }
-          
-          // Draw width label at bottom
-          ctx.font = '9px Arial';
-          ctx.fillStyle = '#444';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(
-            `${Math.round(cabinet.cabinet_width)}mm`, 
-            cabinetX + cabinetWidth / 2, 
-            0
-          );
         });
       }
       
