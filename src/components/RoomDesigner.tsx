@@ -2934,19 +2934,15 @@ const updateCabinetProperty = (cabinetId, property, value) => {
 const exportRoomData = () => {
   // Create the export data structure directly from the existing room data
   const exportData = rooms.map(room => {
-    // Get wall data that's already calculated for the UI
-    const wallData = calculateWallData(room);
-    
+    // Existing room export logic remains the same
     return {
       id: room.id,
       isMain: room.isMain,
       isComplete: room.isComplete,
-      // Group x and y coordinates into separate arrays
       points: {
         x: room.points.map(point => Math.round(point.x)),
         y: room.points.map(point => Math.round(point.y))
       },
-      // Group wall data with arrays for each property
       walls: room.isComplete ? {
         count: room.points.length,
         from: room.points.map((_, index) => index),
@@ -2956,20 +2952,18 @@ const exportRoomData = () => {
         from: [],
         to: [],
       },
-      // Group door data with arrays for each property
       doors: {
         count: room.doors.length,
         wallIndices: room.doors.map(door => door.wallIndex),
         widths: room.doors.map(door => Math.round(door.width)),
         positions: room.doors.map(door => Math.round(door.position))
       },
-      // Group window data with arrays for each property
       windows: {
         count: room.windows.length,
         wallIndices: room.windows.map(window => window.wallIndex),
         widths: room.windows.map(window => Math.round(window.width)),
         heights: room.windows.map(window => Math.round(window.height)),
-        sillHeights: window.windows.map(window => Math.round(window.sillHeight)),
+        sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
         positions: room.windows.map(window => Math.round(window.position))
       }
     };
@@ -3024,17 +3018,55 @@ const exportRoomData = () => {
   // Convert to JSON string with 2-space indentation
   const jsonData = JSON.stringify(exportObject, null, 2);
   
-  // Copy to clipboard
-  navigator.clipboard.writeText(jsonData)
-    .then(() => {
-      alert('Room data copied to clipboard!');
-    })
-    .catch(err => {
-      console.error('Failed to copy data: ', err);
-      alert('Failed to copy data to clipboard. See console for details.');
-    });
+  // Use the Clipboard API with a more robust approach
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(jsonData)
+      .then(() => {
+        alert('Room data copied to clipboard!');
+      })
+      .catch(err => {
+        console.error('Failed to copy data: ', err);
+        fallbackCopyTextToClipboard(jsonData);
+      });
+  } else {
+    // Fallback for browsers without clipboard API
+    fallbackCopyTextToClipboard(jsonData);
+  }
 
   return jsonData;
+};
+
+// Add this helper function to handle clipboard copying as a fallback
+const fallbackCopyTextToClipboard = (text: string) => {
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  
+  // Make the textarea out of viewport
+  textArea.style.position = 'fixed';
+  textArea.style.top = '0';
+  textArea.style.left = '0';
+  textArea.style.width = '2em';
+  textArea.style.height = '2em';
+  textArea.style.padding = '0';
+  textArea.style.border = 'none';
+  textArea.style.outline = 'none';
+  textArea.style.boxShadow = 'none';
+  textArea.style.background = 'transparent';
+
+  document.body.appendChild(textArea);
+  textArea.select();
+
+  try {
+    const successful = document.execCommand('copy');
+    const msg = successful ? 'successful' : 'unsuccessful';
+    console.log('Fallback copy was ' + msg);
+    alert('Room data copied to clipboard!');
+  } catch (err) {
+    console.error('Unable to copy', err);
+    alert('Failed to copy. Please manually copy the exported data.');
+  }
+
+  document.body.removeChild(textArea);
 };
 
 
@@ -4981,27 +5013,6 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
         ctx.restore();
       }
       
-      // // Draw visual cues for start and end types
-      // if (run.start_type === 'Wall') {
-      //   // Draw wall indicator at start
-      //   ctx.beginPath();
-      //   ctx.moveTo(0, 0);
-      //   ctx.lineTo(0, -height);
-      //   ctx.strokeStyle = '#6b7280';
-      //   ctx.lineWidth = 4;
-      //   ctx.stroke();
-      // }
-      
-      // if (run.end_type === 'Wall') {
-      //   // Draw wall indicator at end
-      //   ctx.beginPath();
-      //   ctx.moveTo(width, 0);
-      //   ctx.lineTo(width, -height);
-      //   ctx.strokeStyle = '#6b7280';
-      //   ctx.lineWidth = 4;
-      //   ctx.stroke();
-      // }
-      
       // Draw top filler indicator if applicable
       if (run.top_filler) {
         ctx.beginPath();
@@ -5469,20 +5480,28 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
               {isAddingRun ? 'Adding Cabinet Run...' : 'Add Cabinet Run'}
             </button>
             <button
-            onClick={() => {
-              setRooms([]);
-              setActiveRoomId(null);
-              setIsAddingSecondaryRoom(false);
-              setCabinetRuns([]); // Add this line to clear cabinet runs
-            }}
-            className="flex items-center gap-2 px-4 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
-          >
-            <RotateCcw size={16} />
-            Reset All
-          </button>
+              onClick={() => {
+                setRooms([]);
+                setActiveRoomId(null);
+                setIsAddingSecondaryRoom(false);
+                setCabinetRuns([]); // Add this line to clear cabinet runs
+              }}
+              className="flex items-center gap-2 px-4 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+            >
+              <RotateCcw size={16} />
+              Reset All
+            </button>
             
             <button
-              onClick={exportRoomData}
+              onClick={(e) => {
+                console.log('Export button clicked');
+                try {
+                  const exportedData = exportRoomData();
+                  console.log('Exported data:', exportedData);
+                } catch (error) {
+                  console.error('Error during export:', error);
+                }
+              }}
               disabled={rooms.length === 0 || !rooms.some(r => r.isComplete)}
               className="flex items-center gap-2 px-4 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
