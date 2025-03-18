@@ -10,7 +10,12 @@ interface Room {
   windows: Window[];
   isComplete: boolean;
   isMain: boolean;
-  noClosingWall?: boolean; // New property to indicate no closing wall should be drawn
+  noClosingWall?: boolean;
+  height: number;
+  wall_thickness: number; // New property for wall thickness
+  wall_material: string;  // New property for wall material
+  floor_material: string; // New property for floor material
+  ceiling_material: string; // New property for ceiling material
 }
 
 interface Point {
@@ -244,6 +249,27 @@ const RoomDesigner: React.FC = () => {
   const [newCabinetMaterial, setNewCabinetMaterial] = useState<string>('WhiteOak_SlipMatch');
   const True = true;
   const False = false;
+  const [editingRoomHeights, setEditingRoomHeights] = useState<{ [key: string]: string }>({});
+
+  const handleRoomHeightChange = (roomId: string, value: string) => {
+    setEditingRoomHeights({ ...editingRoomHeights, [roomId]: value });
+  };
+
+  const handleRoomHeightBlur = (roomId: string) => {
+    const newHeight = Number(editingRoomHeights[roomId]);
+    if (!isNaN(newHeight) && newHeight > 0) {
+      updateRoomHeight(roomId, newHeight);
+    }
+    
+    // Clear the editing state
+    const newEditingRoomHeights = { ...editingRoomHeights };
+    delete newEditingRoomHeights[roomId];
+    setEditingRoomHeights(newEditingRoomHeights);
+  };
+  const [editingWallThickness, setEditingWallThickness] = useState<{ [key: string]: string }>({});
+  const [editingWallMaterial, setEditingWallMaterial] = useState<{ [key: string]: string }>({});
+  const [editingFloorMaterial, setEditingFloorMaterial] = useState<{ [key: string]: string }>({});
+  const [editingCeilingMaterial, setEditingCeilingMaterial] = useState<{ [key: string]: string }>({});
   
 
 
@@ -256,7 +282,12 @@ const RoomDesigner: React.FC = () => {
         doors: [],
         windows: [],
         isComplete: false,
-        isMain: true
+        isMain: true,
+        height: 2438, // Default height in mm
+        wall_thickness: 200, // Default wall thickness in mm
+        wall_material: "Simple Wall Shader", // Default wall material
+        floor_material: "WoodFlooring_1", // Default floor material
+        ceiling_material: "Simple Wall Shader" // Default ceiling material
       };
       setRooms([mainRoom]);
       setActiveRoomId('main');
@@ -2959,6 +2990,11 @@ const exportRoomData = () => {
       id: mappedId, // Use the mapped integer ID
       isMain: room.isMain,
       isComplete: room.isComplete,
+      height: Math.round(room.height), // Include room height in export
+      wall_thickness: Math.round(room.wall_thickness), // Include wall thickness in export
+      wall_material: room.wall_material, // Include wall material in export
+      floor_material: room.floor_material, // Include floor material in export
+      ceiling_material: room.ceiling_material, // Include ceiling material in export
       points: {
         x: room.points.map(point => Math.round(point.x)),
         y: room.points.map(point => Math.round(point.y))
@@ -4320,26 +4356,31 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
 };
 
 
-  const startAddingSecondaryRoom = () => {
-    if (!activeRoom?.isComplete) {
-      alert('Please complete the main room first');
-      return;
-    }
-    
-    const newRoomId = `room-${rooms.length}`;
-    const newRoom: Room = {
-      id: newRoomId,
-      points: [],
-      doors: [],
-      windows: [],
-      isComplete: false,
-      isMain: false
-    };
-    
-    setRooms([...rooms, newRoom]);
-    setActiveRoomId(newRoomId);
-    setIsAddingSecondaryRoom(true);
+const startAddingSecondaryRoom = () => {
+  if (!activeRoom?.isComplete) {
+    alert('Please complete the main room first');
+    return;
+  }
+  
+  const newRoomId = `room-${rooms.length}`;
+  const newRoom: Room = {
+    id: newRoomId,
+    points: [],
+    doors: [],
+    windows: [],
+    isComplete: false,
+    isMain: false,
+    height: 2438, // Default height in mm
+    wall_thickness: 200, // Default wall thickness in mm
+    wall_material: "Simple Wall Shader", // Default wall material
+    floor_material: "WoodFlooring_1", // Default floor material
+    ceiling_material: "Simple Wall Shader" // Default ceiling material
   };
+  
+  setRooms([...rooms, newRoom]);
+  setActiveRoomId(newRoomId);
+  setIsAddingSecondaryRoom(true);
+};
 
   const getScreenMousePosition = (e: React.MouseEvent<HTMLCanvasElement>): Point => {
     const canvas = canvasRef.current;
@@ -4530,6 +4571,68 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
     const newEditingCoordinates = { ...editingCoordinates };
     delete newEditingCoordinates[key];
     setEditingCoordinates(newEditingCoordinates);
+  };
+
+  const updateRoomHeight = (roomId: string, newHeight: number) => {
+    if (newHeight <= 0) return;
+    
+    setRooms(prevRooms => prevRooms.map(room => 
+      room.id === roomId ? { ...room, height: newHeight } : room
+    ));
+  };
+
+  const handleWallThicknessChange = (roomId: string, value: string) => {
+    setEditingWallThickness({ ...editingWallThickness, [roomId]: value });
+  };
+  
+  const handleWallThicknessBlur = (roomId: string) => {
+    const newThickness = Number(editingWallThickness[roomId]);
+    if (!isNaN(newThickness) && newThickness > 0) {
+      updateWallThickness(roomId, newThickness);
+    }
+    
+    // Clear the editing state
+    const newEditingWallThickness = { ...editingWallThickness };
+    delete newEditingWallThickness[roomId];
+    setEditingWallThickness(newEditingWallThickness);
+  };
+  
+  const updateWallThickness = (roomId: string, newThickness: number) => {
+    if (newThickness <= 0) return;
+    
+    setRooms(prevRooms => prevRooms.map(room => 
+      room.id === roomId ? { ...room, wall_thickness: newThickness } : room
+    ));
+  };
+  
+  const handleWallMaterialChange = (roomId: string, value: string) => {
+    updateWallMaterial(roomId, value);
+  };
+  
+  const updateWallMaterial = (roomId: string, material: string) => {
+    setRooms(prevRooms => prevRooms.map(room => 
+      room.id === roomId ? { ...room, wall_material: material } : room
+    ));
+  };
+  
+  const handleFloorMaterialChange = (roomId: string, value: string) => {
+    updateFloorMaterial(roomId, value);
+  };
+  
+  const updateFloorMaterial = (roomId: string, material: string) => {
+    setRooms(prevRooms => prevRooms.map(room => 
+      room.id === roomId ? { ...room, floor_material: material } : room
+    ));
+  };
+  
+  const handleCeilingMaterialChange = (roomId: string, value: string) => {
+    updateCeilingMaterial(roomId, value);
+  };
+  
+  const updateCeilingMaterial = (roomId: string, material: string) => {
+    setRooms(prevRooms => prevRooms.map(room => 
+      room.id === roomId ? { ...room, ceiling_material: material } : room
+    ));
   };
   
   const updateSnappedRunsPositionsImmediate = (updatedRooms: Room[]) => {
@@ -5743,7 +5846,99 @@ const updateAttachedPointsAfterDrag = (draggingPoint) => {
               ))}
             </select>
           </div>
-
+      
+          {/* Room Properties */}
+          <div className="mb-4 grid grid-cols-2 gap-4">
+            {/* Room Height Input */}
+            <div className="flex items-center">
+              <label className="text-sm font-medium text-gray-700 mr-2">Room Height (mm):</label>
+              <input
+                type="text"
+                value={
+                  editingRoomHeights[activeRoom.id] !== undefined 
+                    ? editingRoomHeights[activeRoom.id] 
+                    : Math.round(activeRoom.height).toString()
+                }
+                onChange={(e) => handleRoomHeightChange(activeRoom.id, e.target.value)}
+                onBlur={() => handleRoomHeightBlur(activeRoom.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.target.blur(); // Trigger onBlur to apply the change
+                  }
+                }}
+                className="w-24 px-2 py-1 border border-gray-300 rounded"
+              />
+            </div>
+      
+            {/* Wall Thickness Input */}
+            <div className="flex items-center">
+              <label className="text-sm font-medium text-gray-700 mr-2">Wall Thickness (mm):</label>
+              <input
+                type="text"
+                value={
+                  editingWallThickness[activeRoom.id] !== undefined 
+                    ? editingWallThickness[activeRoom.id] 
+                    : Math.round(activeRoom.wall_thickness).toString()
+                }
+                onChange={(e) => handleWallThicknessChange(activeRoom.id, e.target.value)}
+                onBlur={() => handleWallThicknessBlur(activeRoom.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.target.blur(); // Trigger onBlur to apply the change
+                  }
+                }}
+                className="w-24 px-2 py-1 border border-gray-300 rounded"
+              />
+            </div>
+      
+            {/* Wall Material Dropdown */}
+            <div className="flex items-center">
+              <label className="text-sm font-medium text-gray-700 mr-2">Wall Material:</label>
+              <select
+                value={activeRoom.wall_material}
+                onChange={(e) => handleWallMaterialChange(activeRoom.id, e.target.value)}
+                className="w-48 px-2 py-1 border border-gray-300 rounded"
+              >
+                <option value="Simple Wall Shader">Simple Wall Shader</option>
+                {/* <option value="Plaster">Plaster</option>
+                <option value="Concrete">Concrete</option>
+                <option value="Brick">Brick</option>
+                <option value="Wood Paneling">Wood Paneling</option> */}
+              </select>
+            </div>
+      
+            {/* Floor Material Dropdown */}
+            <div className="flex items-center">
+              <label className="text-sm font-medium text-gray-700 mr-2">Floor Material:</label>
+              <select
+                value={activeRoom.floor_material}
+                onChange={(e) => handleFloorMaterialChange(activeRoom.id, e.target.value)}
+                className="w-48 px-2 py-1 border border-gray-300 rounded"
+              >
+                <option value="WoodFlooring_1">Wood Flooring 1</option>
+                {/* <option value="WoodFlooring_2">Wood Flooring 2</option>
+                <option value="Tile">Tile</option>
+                <option value="Carpet">Carpet</option>
+                <option value="Concrete">Concrete</option> */}
+              </select>
+            </div>
+      
+            {/* Ceiling Material Dropdown */}
+            <div className="flex items-center">
+              <label className="text-sm font-medium text-gray-700 mr-2">Ceiling Material:</label>
+              <select
+                value={activeRoom.ceiling_material}
+                onChange={(e) => handleCeilingMaterialChange(activeRoom.id, e.target.value)}
+                className="w-48 px-2 py-1 border border-gray-300 rounded"
+              >
+                <option value="Simple Wall Shader">Simple Wall Shader</option>
+                {/* <option value="Plaster">Plaster</option>
+                <option value="Wood Paneling">Wood Paneling</option>
+                <option value="Acoustic Tile">Acoustic Tile</option> */}
+              </select>
+            </div>
+          </div>
+      
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
