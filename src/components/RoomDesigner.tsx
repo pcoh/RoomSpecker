@@ -679,70 +679,73 @@ const RoomDesigner: React.FC = () => {
   };
 
   const addDoor = (roomId: string, wallIndex: number, startPoint: Point, endPoint: Point) => {
-    // Determine the correct room and wall to associate the door with
-    const wallOwnerInfo = findWallOwner(roomId, wallIndex);
-    
-    // If the wall owner isn't the original room, we need to project the door points
-    if (wallOwnerInfo.roomId !== roomId || wallOwnerInfo.wallIndex !== wallIndex) {
-      // Recalculate points on the owner's wall
-      const dx = wallOwnerInfo.endPoint.x - wallOwnerInfo.startPoint.x;
-      const dy = wallOwnerInfo.endPoint.y - wallOwnerInfo.startPoint.y;
-      const len2 = dx * dx + dy * dy;
+    try {
+      console.log("addDoor called with:", { roomId, wallIndex, startPoint, endPoint });
       
-      if (len2 > 0) {
-        // Find equivalent positions on owner's wall
-        const startT = Math.max(0, Math.min(1, (
-          (startPoint.x - wallOwnerInfo.startPoint.x) * dx + 
-          (startPoint.y - wallOwnerInfo.startPoint.y) * dy
-        ) / len2));
-        
-        const endT = Math.max(0, Math.min(1, (
-          (endPoint.x - wallOwnerInfo.startPoint.x) * dx + 
-          (endPoint.y - wallOwnerInfo.startPoint.y) * dy
-        ) / len2));
-        
-        startPoint = {
-          x: wallOwnerInfo.startPoint.x + startT * dx,
-          y: wallOwnerInfo.startPoint.y + startT * dy
-        };
-        
-        endPoint = {
-          x: wallOwnerInfo.startPoint.x + endT * dx,
-          y: wallOwnerInfo.startPoint.y + endT * dy
-        };
+      // Find the room
+      const room = rooms.find(r => r.id === roomId);
+      if (!room) {
+        console.error(`Room with ID ${roomId} not found`);
+        return;
       }
+      
+      // Validate wall index
+      if (wallIndex < 0 || wallIndex >= room.points.length) {
+        console.error(`Invalid wall index ${wallIndex} for room ${roomId} with ${room.points.length} points`);
+        return;
+      }
+      
+      // Get wall endpoints
+      const p1 = room.points[wallIndex];
+      const p2 = room.points[(wallIndex + 1) % room.points.length];
+      
+      // Create safe copies of all points
+      const safeP1 = { x: p1.x, y: p1.y };
+      const safeP2 = { x: p2.x, y: p2.y };
+      const safeStartPoint = { x: startPoint.x, y: startPoint.y };
+      const safeEndPoint = { x: endPoint.x, y: endPoint.y };
+      
+      // Calculate door properties
+      const width = Math.sqrt(
+        Math.pow(safeEndPoint.x - safeStartPoint.x, 2) + 
+        Math.pow(safeEndPoint.y - safeStartPoint.y, 2)
+      );
+      
+      const startDist = Math.sqrt(
+        Math.pow(safeStartPoint.x - safeP1.x, 2) + 
+        Math.pow(safeStartPoint.y - safeP1.y, 2)
+      );
+      
+      // Create the door with safe copies
+      const newDoor: Door = {
+        wallIndex,
+        startPoint: safeStartPoint,
+        endPoint: safeEndPoint,
+        width,
+        position: startDist
+      };
+      
+      console.log("Creating new door:", newDoor);
+      
+      // Use a safer version of state update
+      setRooms(prevRooms => {
+        // Create a deep copy to avoid any reference issues
+        return prevRooms.map(r => {
+          if (r.id === roomId) {
+            // Create a new array of doors
+            const newDoors = [...r.doors, newDoor];
+            return { ...r, doors: newDoors };
+          }
+          return r;
+        });
+      });
+      
+      console.log("Door added successfully to room:", roomId);
+    } catch (error) {
+      console.error("Error in addDoor:", error);
     }
-    
-    const room = rooms.find(r => r.id === wallOwnerInfo.roomId);
-    if (!room) return;
-    
-    const p1 = room.points[wallOwnerInfo.wallIndex];
-    const p2 = room.points[(wallOwnerInfo.wallIndex + 1) % room.points.length];
-    
-    const width = Math.sqrt(
-      Math.pow(endPoint.x - startPoint.x, 2) + 
-      Math.pow(endPoint.y - startPoint.y, 2)
-    );
-    
-    const startDist = Math.sqrt(
-      Math.pow(startPoint.x - p1.x, 2) + 
-      Math.pow(startPoint.y - p1.y, 2)
-    );
-    
-    const newDoor: Door = {
-      wallIndex: wallOwnerInfo.wallIndex,
-      startPoint,
-      endPoint,
-      width,
-      position: startDist
-    };
-    
-    setRooms(rooms.map(r => 
-      r.id === wallOwnerInfo.roomId 
-        ? { ...r, doors: [...r.doors, newDoor] }
-        : r
-    ));
   };
+  
 
   const addWindow = (roomId: string, wallIndex: number, startPoint: Point, endPoint: Point) => {
     // Determine the correct room and wall to associate the window with
@@ -3257,116 +3260,108 @@ const fallbackCopyTextToClipboard = (text: string) => {
       }
     }
     
-    // Existing code for doors
+    // Door handling section in handleCanvasMouseDown
     if (addingDoor) {
-      const closestLine = findClosestLine(mousePos);
-      if (closestLine) {
-        let targetRoomId = closestLine.roomId;
-        let targetWallIndex = closestLine.wallIndex;
-        let targetPoint = closestLine.point;
+      try {
+        const closestLine = findClosestLine(mousePos);
+        console.log("Closest line for door:", closestLine);
         
-        // Check if this is a secondary room wall shared with main room
-        const room = rooms.find(r => r.id === closestLine.roomId);
-        
-        if (room && !room.isMain) {
-          const sharedWallInfo = findSharedWallInMainRoom(room, closestLine.wallIndex);
-          
-          if (sharedWallInfo.found) {
-            const mainRoom = rooms.find(r => r.isMain);
-            if (mainRoom) {
-              // Recalculate the point on the main room's wall
-              const mainP1 = mainRoom.points[sharedWallInfo.wallIndex];
-              const mainP2 = mainRoom.points[(sharedWallInfo.wallIndex + 1) % mainRoom.points.length];
-              
-              const dx = mainP2.x - mainP1.x;
-              const dy = mainP2.y - mainP1.y;
-              const len2 = dx * dx + dy * dy;
-              
-              if (len2 > 0) {
-                const t = Math.max(0, Math.min(1, (
-                  (closestLine.point.x - mainP1.x) * dx + (closestLine.point.y - mainP1.y) * dy
-                ) / len2));
-                
-                targetRoomId = mainRoom.id;
-                targetWallIndex = sharedWallInfo.wallIndex;
-                targetPoint = {
-                  x: mainP1.x + t * dx,
-                  y: mainP1.y + t * dy
-                };
-              }
-            }
-          }
+        // Exit early if no line found
+        if (!closestLine) {
+          console.log("No wall found near click position");
+          return;
         }
         
         if (!doorStartPoint) {
-          setDoorStartPoint({
-            roomId: targetRoomId,
-            wallIndex: targetWallIndex,
-            point: targetPoint
-          });
-        } else if (doorStartPoint.roomId === targetRoomId && 
-                  doorStartPoint.wallIndex === targetWallIndex) {
-          addDoor(doorStartPoint.roomId, doorStartPoint.wallIndex, doorStartPoint.point, targetPoint);
+          // Set door start point
+          const newStartPoint = {
+            roomId: closestLine.roomId,
+            wallIndex: closestLine.wallIndex,
+            point: { x: closestLine.point.x, y: closestLine.point.y } // Create plain object copy
+          };
+          
+          console.log("Setting door start point:", newStartPoint);
+          setDoorStartPoint(newStartPoint);
+          return;
+        } 
+        
+        // We already have a start point, now add the door if on same wall
+        if (doorStartPoint.roomId === closestLine.roomId && 
+            doorStartPoint.wallIndex === closestLine.wallIndex) {
+          
+          console.log("Found end point on same wall, adding door");
+          
+          // Create simple point objects with only x,y properties
+          const startPointPlain = { 
+            x: doorStartPoint.point.x, 
+            y: doorStartPoint.point.y 
+          };
+          
+          const endPointPlain = { 
+            x: closestLine.point.x, 
+            y: closestLine.point.y 
+          };
+          
+          // Add the door
+          addDoor(
+            doorStartPoint.roomId,
+            doorStartPoint.wallIndex,
+            startPointPlain,
+            endPointPlain
+          );
+          
+          // Reset state
           setAddingDoor(false);
           setDoorStartPoint(null);
+        } else {
+          console.log("Clicked on a different wall - must click on same wall to complete door");
         }
+      } catch (error) {
+        console.error("Error in door placement logic:", error);
+        // Reset door placement state on error
+        setAddingDoor(false);
+        setDoorStartPoint(null);
       }
       return;
     }
   
-    // Existing code for windows
+    // Window handling
     if (addingWindow) {
-      const closestLine = findClosestLine(mousePos);
-      if (closestLine) {
-        let targetRoomId = closestLine.roomId;
-        let targetWallIndex = closestLine.wallIndex;
-        let targetPoint = closestLine.point;
+      try {
+        const closestLine = findClosestLine(mousePos);
+        console.log("Closest line for window:", closestLine);
         
-        // Check if this is a secondary room wall shared with main room
-        const room = rooms.find(r => r.id === closestLine.roomId);
-        
-        if (room && !room.isMain) {
-          const sharedWallInfo = findSharedWallInMainRoom(room, closestLine.wallIndex);
-          
-          if (sharedWallInfo.found) {
-            const mainRoom = rooms.find(r => r.isMain);
-            if (mainRoom) {
-              // Recalculate the point on the main room's wall
-              const mainP1 = mainRoom.points[sharedWallInfo.wallIndex];
-              const mainP2 = mainRoom.points[(sharedWallInfo.wallIndex + 1) % mainRoom.points.length];
-              
-              const dx = mainP2.x - mainP1.x;
-              const dy = mainP2.y - mainP1.y;
-              const len2 = dx * dx + dy * dy;
-              
-              if (len2 > 0) {
-                const t = Math.max(0, Math.min(1, (
-                  (closestLine.point.x - mainP1.x) * dx + (closestLine.point.y - mainP1.y) * dy
-                ) / len2));
-                
-                targetRoomId = mainRoom.id;
-                targetWallIndex = sharedWallInfo.wallIndex;
-                targetPoint = {
-                  x: mainP1.x + t * dx,
-                  y: mainP1.y + t * dy
-                };
-              }
-            }
+        if (closestLine) {
+          if (!windowStartPoint) {
+            setWindowStartPoint({
+              roomId: closestLine.roomId,
+              wallIndex: closestLine.wallIndex,
+              point: {...closestLine.point} // Create a copy to avoid reference issues
+            });
+            console.log("Window start point set:", closestLine);
+          } else if (windowStartPoint.roomId === closestLine.roomId && 
+                    windowStartPoint.wallIndex === closestLine.wallIndex) {
+            console.log("Attempting to add window", {
+              startRoom: windowStartPoint.roomId,
+              startWall: windowStartPoint.wallIndex,
+              startPoint: windowStartPoint.point,
+              endPoint: closestLine.point
+            });
+            
+            addWindow(
+              windowStartPoint.roomId, 
+              windowStartPoint.wallIndex, 
+              {...windowStartPoint.point}, 
+              {...closestLine.point}
+            );
+            setAddingWindow(false);
+            setWindowStartPoint(null);
           }
         }
-        
-        if (!windowStartPoint) {
-          setWindowStartPoint({
-            roomId: targetRoomId,
-            wallIndex: targetWallIndex,
-            point: targetPoint
-          });
-        } else if (windowStartPoint.roomId === targetRoomId && 
-                  windowStartPoint.wallIndex === targetWallIndex) {
-          addWindow(windowStartPoint.roomId, windowStartPoint.wallIndex, windowStartPoint.point, targetPoint);
-          setAddingWindow(false);
-          setWindowStartPoint(null);
-        }
+      } catch (error) {
+        console.error("Error handling window placement:", error);
+        setAddingWindow(false);
+        setWindowStartPoint(null);
       }
       return;
     }
@@ -4847,7 +4842,13 @@ const startAddingSecondaryRoom = () => {
   
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Draw grid
+    // Draw each component
+    drawGrid(ctx, canvas);
+    drawRooms(ctx);
+    drawCabinetRuns(ctx, canvas);
+  };
+  
+  const drawGrid = (ctx, canvas) => {
     ctx.strokeStyle = '#eee';
     ctx.lineWidth = 0.5;
     
@@ -4870,148 +4871,158 @@ const startAddingSecondaryRoom = () => {
       ctx.lineTo(canvas.width, y);
       ctx.stroke();
     }
-    
-    // Draw rooms
+  };
+  
+  const drawRooms = (ctx) => {
     rooms.forEach(room => {
       if (room.points.length > 0) {
-        ctx.beginPath();
-        const firstScreenPoint = worldToScreen(room.points[0].x, room.points[0].y);
-        ctx.moveTo(firstScreenPoint.x, firstScreenPoint.y);
-        
-        room.points.forEach((point, index) => {
-          if (index > 0) {
-            const screenPoint = worldToScreen(point.x, point.y);
-            ctx.lineTo(screenPoint.x, screenPoint.y);
-          }
-        });
-        
-        // Only close the path if the room is complete and doesn't have the noClosingWall flag
-        if (room.isComplete && !room.noClosingWall) {
-          ctx.closePath();
-        }
-        
-        ctx.strokeStyle = room.id === activeRoomId ? '#2563eb' : '#888888';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-  
-        // Draw points
-        room.points.forEach((point, index) => {
-          const screenPoint = worldToScreen(point.x, point.y);
-          
-          ctx.beginPath();
-          ctx.arc(screenPoint.x, screenPoint.y, POINT_RADIUS, 0, Math.PI * 2);
-          ctx.fillStyle = selectedPoint?.roomId === room.id && selectedPoint.index === index 
-            ? '#dc2626' 
-            : '#888888';
-          ctx.fill();
-  
-          ctx.font = '12px Arial';
-          ctx.fillStyle = '#000';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'top';
-          
-          let labelX = screenPoint.x + LABEL_OFFSET;
-          let labelY = screenPoint.y;
-          
-          if (labelX > canvas.width - 100) {
-            labelX = screenPoint.x - LABEL_OFFSET - 80;
-          }
-          
-          ctx.fillText(`(${Math.round(point.x)}, ${Math.round(point.y)})`, labelX, labelY);
-        });
-  
-        // Draw doors
-        room.doors.forEach((door, index) => {
-          const startScreen = worldToScreen(door.startPoint.x, door.startPoint.y);
-          const endScreen = worldToScreen(door.endPoint.x, door.endPoint.y);
-          
-          ctx.beginPath();
-          ctx.moveTo(startScreen.x, startScreen.y);
-          ctx.lineTo(endScreen.x, endScreen.y);
-          ctx.strokeStyle = '#10b981';
-          ctx.lineWidth = 3;
-          ctx.stroke();
-          
-          const isStartSelected = selectedDoorPoint?.roomId === room.id && 
-                                selectedDoorPoint.doorIndex === index && 
-                                selectedDoorPoint.pointType === 'start';
-          
-          const isEndSelected = selectedDoorPoint?.roomId === room.id && 
-                              selectedDoorPoint.doorIndex === index && 
-                              selectedDoorPoint.pointType === 'end';
-          
-          ctx.beginPath();
-          ctx.arc(startScreen.x, startScreen.y, DOOR_POINT_RADIUS, 0, Math.PI * 2);
-          ctx.fillStyle = isStartSelected ? '#dc2626' : '#10b981';
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.arc(endScreen.x, endScreen.y, DOOR_POINT_RADIUS, 0, Math.PI * 2);
-          ctx.fillStyle = isEndSelected ? '#dc2626' : '#10b981';
-          ctx.fill();
-          
-          const midX = (startScreen.x + endScreen.x) / 2;
-          const midY = (startScreen.y + endScreen.y) / 2;
-          
-          ctx.font = '12px Arial';
-          ctx.fillStyle = '#10b981';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(`${Math.round(door.width)}mm`, midX, midY - 15);
-        });
-  
-        // Draw windows
-        room.windows.forEach((window, index) => {
-          const startScreen = worldToScreen(window.startPoint.x, window.startPoint.y);
-          const endScreen = worldToScreen(window.endPoint.x, window.endPoint.y);
-          
-          ctx.beginPath();
-          ctx.moveTo(startScreen.x, startScreen.y);
-          ctx.lineTo(endScreen.x, endScreen.y);
-          ctx.strokeStyle = '#3b82f6';
-          ctx.lineWidth = 3;
-          ctx.stroke();
-          
-          const isStartSelected = selectedWindowPoint?.roomId === room.id && 
-                                selectedWindowPoint.windowIndex === index && 
-                                selectedWindowPoint.pointType === 'start';
-          
-          const isEndSelected = selectedWindowPoint?.roomId === room.id && 
-                              selectedWindowPoint.windowIndex === index && 
-                              selectedWindowPoint.pointType === 'end';
-          
-          ctx.beginPath();
-          ctx.arc(startScreen.x, startScreen.y, WINDOW_POINT_RADIUS, 0, Math.PI * 2);
-          ctx.fillStyle = isStartSelected ? '#dc2626' : '#3b82f6';
-          ctx.fill();
-          
-          ctx.beginPath();
-          ctx.arc(endScreen.x, endScreen.y, WINDOW_POINT_RADIUS, 0, Math.PI * 2);
-          ctx.fillStyle = isEndSelected ? '#dc2626' : '#3b82f6';
-          ctx.fill();
-          
-          const midX = (startScreen.x + endScreen.x) / 2;
-          const midY = (startScreen.y + endScreen.y) / 2;
-          
-          ctx.font = '12px Arial';
-          ctx.fillStyle = '#3b82f6';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(`${Math.round(window.width)}mm × ${Math.round(window.height)}mm`, midX, midY - 15);
-        });
+        drawRoomOutline(ctx, room);
+        drawRoomPoints(ctx, room);
+        drawDoors(ctx, room);
+        drawWindows(ctx, room);
       }
     });
+  };
   
-    // Draw cabinet runs
+  const drawRoomOutline = (ctx, room) => {
+    ctx.beginPath();
+    const firstScreenPoint = worldToScreen(room.points[0].x, room.points[0].y);
+    ctx.moveTo(firstScreenPoint.x, firstScreenPoint.y);
+    
+    room.points.forEach((point, index) => {
+      if (index > 0) {
+        const screenPoint = worldToScreen(point.x, point.y);
+        ctx.lineTo(screenPoint.x, screenPoint.y);
+      }
+    });
+    
+    // Only close the path if the room is complete and doesn't have the noClosingWall flag
+    if (room.isComplete && !room.noClosingWall) {
+      ctx.closePath();
+    }
+    
+    ctx.strokeStyle = room.id === activeRoomId ? '#2563eb' : '#888888';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  };
+  
+  const drawRoomPoints = (ctx, room) => {
+    room.points.forEach((point, index) => {
+      const screenPoint = worldToScreen(point.x, point.y);
+      
+      ctx.beginPath();
+      ctx.arc(screenPoint.x, screenPoint.y, POINT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = selectedPoint?.roomId === room.id && selectedPoint.index === index 
+        ? '#dc2626' 
+        : '#888888';
+      ctx.fill();
+  
+      ctx.font = '12px Arial';
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      
+      let labelX = screenPoint.x + LABEL_OFFSET;
+      let labelY = screenPoint.y;
+      
+      if (labelX > canvasRef.current.width - 100) {
+        labelX = screenPoint.x - LABEL_OFFSET - 80;
+      }
+      
+      ctx.fillText(`(${Math.round(point.x)}, ${Math.round(point.y)})`, labelX, labelY);
+    });
+  };
+  
+  const drawDoors = (ctx, room) => {
+    room.doors.forEach((door, index) => {
+      const startScreen = worldToScreen(door.startPoint.x, door.startPoint.y);
+      const endScreen = worldToScreen(door.endPoint.x, door.endPoint.y);
+      
+      ctx.beginPath();
+      ctx.moveTo(startScreen.x, startScreen.y);
+      ctx.lineTo(endScreen.x, endScreen.y);
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      const isStartSelected = selectedDoorPoint?.roomId === room.id && 
+                            selectedDoorPoint.doorIndex === index && 
+                            selectedDoorPoint.pointType === 'start';
+      
+      const isEndSelected = selectedDoorPoint?.roomId === room.id && 
+                          selectedDoorPoint.doorIndex === index && 
+                          selectedDoorPoint.pointType === 'end';
+      
+      ctx.beginPath();
+      ctx.arc(startScreen.x, startScreen.y, DOOR_POINT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = isStartSelected ? '#dc2626' : '#10b981';
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.arc(endScreen.x, endScreen.y, DOOR_POINT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = isEndSelected ? '#dc2626' : '#10b981';
+      ctx.fill();
+      
+      const midX = (startScreen.x + endScreen.x) / 2;
+      const midY = (startScreen.y + endScreen.y) / 2;
+      
+      ctx.font = '12px Arial';
+      ctx.fillStyle = '#10b981';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${Math.round(door.width)}mm`, midX, midY - 15);
+    });
+  };
+  
+  const drawWindows = (ctx, room) => {
+    room.windows.forEach((window, index) => {
+      const startScreen = worldToScreen(window.startPoint.x, window.startPoint.y);
+      const endScreen = worldToScreen(window.endPoint.x, window.endPoint.y);
+      
+      ctx.beginPath();
+      ctx.moveTo(startScreen.x, startScreen.y);
+      ctx.lineTo(endScreen.x, endScreen.y);
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      
+      const isStartSelected = selectedWindowPoint?.roomId === room.id && 
+                            selectedWindowPoint.windowIndex === index && 
+                            selectedWindowPoint.pointType === 'start';
+      
+      const isEndSelected = selectedWindowPoint?.roomId === room.id && 
+                          selectedWindowPoint.windowIndex === index && 
+                          selectedWindowPoint.pointType === 'end';
+      
+      ctx.beginPath();
+      ctx.arc(startScreen.x, startScreen.y, WINDOW_POINT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = isStartSelected ? '#dc2626' : '#3b82f6';
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.arc(endScreen.x, endScreen.y, WINDOW_POINT_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = isEndSelected ? '#dc2626' : '#3b82f6';
+      ctx.fill();
+      
+      const midX = (startScreen.x + endScreen.x) / 2;
+      const midY = (startScreen.y + endScreen.y) / 2;
+      
+      ctx.font = '12px Arial';
+      ctx.fillStyle = '#3b82f6';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`${Math.round(window.width)}mm × ${Math.round(window.height)}mm`, midX, midY - 15);
+    });
+  };
+  
+  const drawCabinetRuns = (ctx) => {
     cabinetRuns.forEach(run => {
       // Save canvas state
       ctx.save();
       
-      // Get corners based on the rear-left reference point
       const corners = calculateRunCorners(run);
-      
       const rearLeft = worldToScreen(run.start_pos_x, run.start_pos_y);
-    
+      
       // Transform for rotation around left rear corner
       ctx.translate(rearLeft.x, rearLeft.y);
       ctx.rotate((-run.rotation_z * Math.PI) / 180);
@@ -5020,507 +5031,543 @@ const startAddingSecondaryRoom = () => {
       const width = run.length * scale;
       const height = -run.depth * scale;
       
-      // Calculate visual height for 3D effect based on run type
-      const visualHeight = run.type === 'Base' ? DEFAULT_BASE_HEIGHT * scale : DEFAULT_UPPER_HEIGHT * scale;
-      
-      // Draw 3D effect for runs
-      if (run.type === 'Upper') {
-        // Upper cabinets with shadow
-        ctx.fillStyle = 'rgba(220, 220, 230, 0.2)';
-        ctx.fillRect(0, -visualHeight, width, 0); // From rear wall to ceiling
-      }
-      
-      // Draw main cabinet body - starting from rear-left corner
-      ctx.beginPath();
-      ctx.rect(0, 0, width, -height); // Negative height to draw upward from rear wall
-      
-      // Fill with color based on type
-      if (run.type === 'Base') {
-        ctx.fillStyle = 'rgba(255, 240, 220, 0.6)'; // Light wooden color for base
-      } else {
-        ctx.fillStyle = 'rgba(240, 245, 255, 0.6)'; // Light blue-ish for upper
-      }
-      ctx.fill();
-      
-      // Stroke with color based on selection state
-      ctx.strokeStyle = selectedRun === run.id ? '#dc2626' : run.type === 'Base' ? '#d97706' : '#3b82f6';
-      ctx.lineWidth = selectedRun === run.id ? 3 : 2;
-      ctx.stroke();
-  
-      if (hoverRun === run.id) {
-        // Instead of drawing a dotted outline, fill with a highlight color
-        ctx.beginPath();
-        ctx.rect(0, 0, width, -height); // Use the same dimensions as the cabinet
-        
-        // Choose a highlight color based on the run type
-        if (run.type === 'Base') {
-          ctx.fillStyle = 'rgba(251, 191, 36, 0.4)'; // Semi-transparent amber for base cabinets
-        } else {
-          ctx.fillStyle = 'rgba(96, 165, 250, 0.4)'; // Semi-transparent blue for upper cabinets
-        }
-        
-        // Fill with the highlight color
-        ctx.fill();
-      }
-  
-      // Draw rear wall with dashed line (already at bottom-left of rear wall)
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(width, 0);
-      ctx.setLineDash([5, 3]); // Set dashed line pattern
-      ctx.strokeStyle = '#4B5563'; // Dark gray for rear wall
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.setLineDash([]); // Reset dash pattern for subsequent drawing
-      
-      // Show filler if start type is Wall
-      if (run.start_type === 'Wall') {
-        const fillerWidth = FILLER_WIDTH * scale;
-        ctx.fillStyle = 'rgba(180, 180, 180, 0.7)'; // Gray color for filler
-        ctx.fillRect(0, 0, fillerWidth, -height);
-        ctx.strokeStyle = '#666';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(0, 0, fillerWidth, -height);
-        
-        // Add filler label
-        ctx.save();
-        ctx.translate(fillerWidth / 2, -height / 2);
-        ctx.rotate(Math.PI / 2);
-        ctx.font = '10px Arial';
-        ctx.fillStyle = '#000';
-        ctx.textAlign = 'center';
-        ctx.fillText('FILLER', 0, 0);
-        ctx.restore();
-      }
-
-      if (run.end_type === 'Wall') {
-        const fillerWidth = FILLER_WIDTH * scale;
-        
-        // Calculate where the cabinets end and filler starts
-        const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
-        const totalCabinetsWidth = run.length - startFillerWidth - FILLER_WIDTH; // Subtract both fillers
-        const cabinetsEndX = (startFillerWidth + totalCabinetsWidth) * scale;
-        
-        // Draw end filler
-        ctx.fillStyle = 'rgba(180, 180, 180, 0.7)'; // Gray color for filler
-        ctx.fillRect(cabinetsEndX, 0, fillerWidth, -height);
-        ctx.strokeStyle = '#666';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(cabinetsEndX, 0, fillerWidth, -height);
-        
-        // Add filler label
-        ctx.save();
-        ctx.translate(cabinetsEndX + fillerWidth / 2, -height / 2);
-        ctx.rotate(Math.PI / 2);
-        ctx.font = '10px Arial';
-        ctx.fillStyle = '#000';
-        ctx.textAlign = 'center';
-        ctx.fillText('FILLER', 0, 0);
-        ctx.restore();
-      }
-      
-      // Draw top filler indicator if applicable
-      if (run.top_filler) {
-        ctx.beginPath();
-        ctx.moveTo(0, -height);
-        ctx.lineTo(width, -height);
-        ctx.strokeStyle = '#059669'; // Green for top filler
-        ctx.lineWidth = 4;
-        ctx.stroke();
-      }
-      
-      // Draw snap indicator if snapping
-      if (run.snapInfo?.isSnapped) {
-        const edgeName = run.snapInfo.snappedEdge;
-        
-        ctx.beginPath();
-        if (edgeName === 'rear') {
-          ctx.moveTo(0, 0);
-          ctx.lineTo(width, 0 );
-        } 
-        
-        ctx.strokeStyle = '#10b981'; // Green for snap indicator
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-      
-      // Draw run ID and dimensions
-      ctx.font = '12px Arial';
-      ctx.fillStyle = '#000000';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      
-      // Draw run ID with updated text for islands
-      const runNumber = run.id;
-      const typeText = run.is_island ? "Island" : run.type;
-      ctx.fillText(`Run ${runNumber} (${typeText})`, width / 2, -height / 2);
-      
-      // Draw cabinets in this run
-      const runCabinets = cabinets
-        .filter(c => c.cabinet_run_id === run.id)
-        .sort((a, b) => a.position - b.position);
-      
-      if (runCabinets.length > 0) {
-        // Draw each cabinet
-        runCabinets.forEach(cabinet => {
-          const cabinetX = cabinet.position * scale;
-          const cabinetWidth = cabinet.cabinet_width * scale;
-          const cabinetDepth = -height; // Use the height (negative) from the run
-          
-          // Draw cabinet outline
-          ctx.beginPath();
-          ctx.rect(cabinetX, 0, cabinetWidth, cabinetDepth);
-          ctx.fillStyle = selectedCabinet === cabinet.id 
-            ? 'rgba(252, 211, 77, 0.3)' // Amber highlight for selected cabinet
-            : cabinet.material_doors === 'WhiteOak_SlipMatch'
-              ? 'rgba(253, 230, 190, 0.6)' // Light wood color for oak
-              : 'rgba(229, 231, 235, 0.6)'; // Gray color for painted cabinets
-          ctx.fill();
-          
-          // Draw cabinet border
-          ctx.strokeStyle = selectedCabinet === cabinet.id ? '#dc2626' : '#000';
-          ctx.lineWidth = selectedCabinet === cabinet.id ? 2 : 1;
-          ctx.stroke();
-          
-          // Draw cabinet type label
-          ctx.font = '10px Arial';
-          ctx.fillStyle = '#000';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'top';
-          
-          // Create shortened label based on type
-          let shortLabel = cabinet.cabinet_type;
-          if (cabinet.cabinet_type.startsWith('Base - ')) {
-            shortLabel = cabinet.cabinet_type.replace('Base - ', 'B-');
-          } else if (cabinet.cabinet_type.startsWith('Wall - ')) {
-            shortLabel = cabinet.cabinet_type.replace('Wall - ', 'W-');
-          } else if (cabinet.cabinet_type.startsWith('Tall - ')) {
-            shortLabel = cabinet.cabinet_type.replace('Tall - ', 'T-');
-          } else if (cabinet.cabinet_type.startsWith('CounterTop - ')) {
-            shortLabel = cabinet.cabinet_type.replace('CounterTop - ', 'CT-');
-          }
-  
-          // Further abbreviate common terms
-          shortLabel = shortLabel
-            .replace('Double Leaf Door', 'DblDr')
-            .replace('Leaf Door', 'LfDr')
-            .replace('Shelves', 'Shlv')
-            .replace('Integrated', 'Int')
-            .replace('Fridge_Freezer', 'Fridge')
-            .replace('ExhaustFan', 'Exhst')
-            .replace('Cooktop', 'Cktop')
-            .replace('Corner', 'Cnr');
-  
-          // If still too long, truncate
-          if (shortLabel.length > 12) {
-            shortLabel = shortLabel.substring(0, 12) + '...';
-          }
-          
-          // Draw width label at bottom
-          ctx.font = '9px Arial';
-          ctx.fillStyle = '#444';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'bottom';
-          ctx.fillText(
-            `${Math.round(cabinet.cabinet_width)}mm`, 
-            cabinetX + cabinetWidth / 2, 
-            0
-          );
-          
-          // Draw hinge markers if applicable
-          if (cabinet.cabinet_type.includes('Door')) {
-            const hingeX = cabinet.hinge_right ? cabinetX + cabinetWidth - 2 : cabinetX + 2;
-            
-            // Draw hinges as small circles
-            ctx.beginPath();
-            ctx.arc(hingeX, -5, 2, 0, Math.PI * 2);
-            ctx.arc(hingeX, cabinetDepth + 5, 2, 0, Math.PI * 2);
-            ctx.fillStyle = '#666';
-            ctx.fill();
-          }
-          
-          // Draw drawer lines for drawer cabinets
-          if (cabinet.cabinet_type.includes('Drawer')) {
-            const drawerCount = cabinet.cabinet_type.includes('2-Drawer') ? 2 :
-                               cabinet.cabinet_type.includes('3-Drawer') ? 3 : 
-                               cabinet.cabinet_type.includes('4-Drawer') ? 4 : 0;
-            
-            if (drawerCount > 0) {
-              ctx.strokeStyle = '#666';
-              ctx.lineWidth = 1;
-              
-              const drawerHeight = Math.abs(cabinetDepth) / drawerCount;
-              
-              for (let i = 1; i < drawerCount; i++) {
-                const y = cabinetDepth * (i / drawerCount);
-                
-                ctx.beginPath();
-                ctx.moveTo(cabinetX, y);
-                ctx.lineTo(cabinetX + cabinetWidth, y);
-                ctx.stroke();
-              }
-              
-              // Draw drawer handles
-              ctx.fillStyle = '#666';
-              for (let i = 0; i < drawerCount; i++) {
-                const handleY = cabinetDepth * ((i + 0.5) / drawerCount);
-                const handleWidth = cabinetWidth * 0.4;
-                const handleX = cabinetX + (cabinetWidth - handleWidth) / 2;
-                
-                ctx.fillRect(handleX, handleY - 1, handleWidth, 2);
-              }
-            }
-          } 
-          // For cabinet types with doors or bookcase
-          else if (cabinet.cabinet_type.includes('Bookcase')) {
-            // Draw shelf lines
-            ctx.strokeStyle = '#666';
-            ctx.lineWidth = 1;
-            
-            const shelfCount = 3; // Typical number of shelves
-            const shelfSpacing = Math.abs(cabinetDepth) / (shelfCount + 1);
-            
-            for (let i = 1; i <= shelfCount; i++) {
-              const y = cabinetDepth * (i / (shelfCount + 1));
-              
-              ctx.beginPath();
-              ctx.moveTo(cabinetX, y);
-              ctx.lineTo(cabinetX + cabinetWidth, y);
-              ctx.stroke();
-            }
-          } 
-          // For appliances - special case rendering
-          else if (cabinet.cabinet_type.includes('Oven') || 
-                   cabinet.cabinet_type.includes('Cooktop') ||
-                   cabinet.cabinet_type.includes('Sink') ||
-                   cabinet.cabinet_type.includes('Dishwasher') ||
-                   cabinet.cabinet_type.includes('ExhaustFan') ||
-                   cabinet.cabinet_type.includes('Fridge')) {
-            
-            // Add appliance icon or symbol
-            ctx.fillStyle = '#888';
-            
-            if (cabinet.cabinet_type.includes('Sink')) {
-              // Draw sink icon (oval shape)
-              const sinkWidth = cabinetWidth * 0.6;
-              const sinkHeight = Math.abs(cabinetDepth) * 0.5;
-              const sinkX = cabinetX + (cabinetWidth - sinkWidth) / 2;
-              const sinkY = cabinetDepth * 0.3;
-              
-              ctx.beginPath();
-              ctx.ellipse(
-                sinkX + sinkWidth / 2, 
-                sinkY, 
-                sinkWidth / 2, 
-                sinkHeight / 2, 
-                0, 0, Math.PI * 2
-              );
-              ctx.fillStyle = '#ccc';
-              ctx.fill();
-              ctx.strokeStyle = '#888';
-              ctx.stroke();
-            } 
-            else if (cabinet.cabinet_type.includes('Oven')) {
-              // Draw oven icon (rectangle with line in middle)
-              const ovenWidth = cabinetWidth * 0.8;
-              const ovenHeight = Math.abs(cabinetDepth) * 0.6;
-              const ovenX = cabinetX + (cabinetWidth - ovenWidth) / 2;
-              const ovenY = cabinetDepth * 0.2;
-              
-              ctx.fillStyle = '#ddd';
-              ctx.fillRect(ovenX, ovenY, ovenWidth, ovenHeight);
-              ctx.strokeStyle = '#888';
-              ctx.strokeRect(ovenX, ovenY, ovenWidth, ovenHeight);
-              
-              // Oven door handle
-              ctx.fillStyle = '#888';
-              ctx.fillRect(ovenX + ovenWidth / 2 - 10, ovenY + ovenHeight - 5, 20, 3);
-            }
-            else if (cabinet.cabinet_type.includes('Cooktop')) {
-              // Draw cooktop burner circles
-              const numBurners = cabinet.cabinet_type.includes('30') ? 4 : 5;
-              const burnerRadius = cabinetWidth / (numBurners * 3);
-              const cooktopY = cabinetDepth * 0.3;
-              
-              ctx.fillStyle = '#333';
-              
-              if (numBurners === 4) {
-                // 2x2 grid for 4 burners
-                const spacing = cabinetWidth / 3;
-                const startX = cabinetX + spacing / 2;
-                
-                for (let row = 0; row < 2; row++) {
-                  for (let col = 0; col < 2; col++) {
-                    ctx.beginPath();
-                    ctx.arc(
-                      startX + col * spacing, 
-                      cooktopY + row * spacing / 2, 
-                      burnerRadius, 
-                      0, Math.PI * 2
-                    );
-                    ctx.fill();
-                  }
-                }
-              } else {
-                // 5 burners - one in center, 4 around
-                const centerX = cabinetX + cabinetWidth / 2;
-                const spacing = cabinetWidth / 4;
-                
-                // Center burner
-                ctx.beginPath();
-                ctx.arc(centerX, cooktopY, burnerRadius * 1.2, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Corner burners
-                for (let i = 0; i < 4; i++) {
-                  const angle = i * Math.PI / 2;
-                  ctx.beginPath();
-                  ctx.arc(
-                    centerX + Math.cos(angle) * spacing, 
-                    cooktopY + Math.sin(angle) * spacing / 2, 
-                    burnerRadius, 
-                    0, Math.PI * 2
-                  );
-                  ctx.fill();
-                }
-              }
-            }
-            else if (cabinet.cabinet_type.includes('Fridge')) {
-              // Draw fridge icon
-              const fridgeWidth = cabinetWidth * 0.9;
-              const fridgeHeight = Math.abs(cabinetDepth) * 0.9;
-              const fridgeX = cabinetX + (cabinetWidth - fridgeWidth) / 2;
-              const fridgeY = cabinetDepth * 0.05;
-              
-              // Fridge body
-              ctx.fillStyle = '#ddd';
-              ctx.fillRect(fridgeX, fridgeY, fridgeWidth, fridgeHeight);
-              ctx.strokeStyle = '#888';
-              ctx.strokeRect(fridgeX, fridgeY, fridgeWidth, fridgeHeight);
-              
-              // Fridge/freezer divider line
-              const dividerY = fridgeY + fridgeHeight * 0.3;
-              ctx.beginPath();
-              ctx.moveTo(fridgeX, dividerY);
-              ctx.lineTo(fridgeX + fridgeWidth, dividerY);
-              ctx.stroke();
-              
-              // Handles
-              ctx.fillStyle = '#888';
-              ctx.fillRect(fridgeX + fridgeWidth - 5, fridgeY + fridgeHeight * 0.15, 3, 20);
-              ctx.fillRect(fridgeX + fridgeWidth - 5, fridgeY + fridgeHeight * 0.6, 3, 20);
-            }
-            else if (cabinet.cabinet_type.includes('ExhaustFan')) {
-              // Draw exhaust fan icon
-              const fanWidth = cabinetWidth * 0.7;
-              const fanHeight = Math.abs(cabinetDepth) * 0.4;
-              const fanX = cabinetX + (cabinetWidth - fanWidth) / 2;
-              const fanY = cabinetDepth * 0.2;
-              
-              // Fan housing
-              ctx.fillStyle = '#ccc';
-              ctx.fillRect(fanX, fanY, fanWidth, fanHeight);
-              ctx.strokeStyle = '#888';
-              ctx.strokeRect(fanX, fanY, fanWidth, fanHeight);
-              
-              // Vent lines
-              const vents = 5;
-              const ventSpacing = fanWidth / (vents + 1);
-              for (let i = 1; i <= vents; i++) {
-                ctx.beginPath();
-                ctx.moveTo(fanX + i * ventSpacing, fanY);
-                ctx.lineTo(fanX + i * ventSpacing, fanY + fanHeight);
-                ctx.stroke();
-              }
-            }
-          }
-          // For cabinet types with doors
-          else if (cabinet.cabinet_type.includes('Door')) {
-            // Draw door division for double leaf doors
-            if (cabinet.cabinet_type.includes('Double')) {
-              ctx.beginPath();
-              ctx.moveTo(cabinetX + cabinetWidth / 2, 0);
-              ctx.lineTo(cabinetX + cabinetWidth / 2, cabinetDepth);
-              ctx.strokeStyle = '#666';
-              ctx.lineWidth = 1;
-              ctx.stroke();
-            }
-            
-            // Draw door handles
-            ctx.fillStyle = '#666';
-            if (cabinet.cabinet_type.includes('Double')) {
-              // Two handles for double doors
-              const handleY = cabinetDepth / 2;
-              const handleSize = 3;
-              
-              // Left door handle (right side)
-              const leftHandleX = cabinet.hinge_right ? 
-                cabinetX + cabinetWidth / 2 - 5 : 
-                cabinetX + cabinetWidth / 2 - handleSize - 2;
-              
-              // Right door handle (left side)
-              const rightHandleX = cabinet.hinge_right ? 
-                cabinetX + cabinetWidth / 2 + 2 : 
-                cabinetX + cabinetWidth / 2 + 5;
-              
-              ctx.beginPath();
-              ctx.arc(leftHandleX, handleY, handleSize, 0, Math.PI * 2);
-              ctx.fill();
-              
-              ctx.beginPath();
-              ctx.arc(rightHandleX, handleY, handleSize, 0, Math.PI * 2);
-              ctx.fill();
-            } else {
-              // Single handle for single door
-              const handleY = cabinetDepth / 2;
-              const handleSize = 3;
-              const handleX = cabinet.hinge_right ? 
-                cabinetX + 10 : 
-                cabinetX + cabinetWidth - 10;
-              
-              ctx.beginPath();
-              ctx.arc(handleX, handleY, handleSize, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          }
-          // Draw corner cabinets specially
-          else if (cabinet.cabinet_type.includes('Corner')) {
-            ctx.fillStyle = '#ddd';
-            
-            // Draw diagonal line for corner
-            ctx.beginPath();
-            ctx.moveTo(cabinetX, 0);
-            ctx.lineTo(cabinetX + cabinetWidth, cabinetDepth);
-            ctx.strokeStyle = '#888';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            
-            // Draw direction arrow
-            const isLeft = cabinet.cabinet_type.includes('Left');
-            const arrowX = cabinetX + cabinetWidth / 2;
-            const arrowY = cabinetDepth / 2;
-            const arrowSize = 8;
-            
-            ctx.beginPath();
-            if (isLeft) {
-              ctx.moveTo(arrowX - arrowSize, arrowY);
-              ctx.lineTo(arrowX, arrowY - arrowSize);
-              ctx.lineTo(arrowX, arrowY + arrowSize);
-            } else {
-              ctx.moveTo(arrowX + arrowSize, arrowY);
-              ctx.lineTo(arrowX, arrowY - arrowSize);
-              ctx.lineTo(arrowX, arrowY + arrowSize);
-            }
-            ctx.closePath();
-            ctx.fillStyle = '#888';
-            ctx.fill();
-          }
-        });
-      }
+      // Draw different parts of the cabinet run
+      drawRunBase(ctx, run, width, height);
+      drawRunHighlight(ctx, run, width, height);
+      drawRunWall(ctx, run, width);
+      drawRunFillers(ctx, run, width, height);
+      drawRunCabinets(ctx, run, width, height);
       
       // Restore canvas state
       ctx.restore();
     });
+  };
+  
+  const drawRunBase = (ctx, run, width, height) => {
+    const visualHeight = run.type === 'Base' ? DEFAULT_BASE_HEIGHT * scale : DEFAULT_UPPER_HEIGHT * scale;
+    
+    // Draw 3D effect for upper runs
+    if (run.type === 'Upper') {
+      ctx.fillStyle = 'rgba(220, 220, 230, 0.2)';
+      ctx.fillRect(0, -visualHeight, width, 0); // From rear wall to ceiling
+    }
+    
+    // Draw main cabinet body
+    ctx.beginPath();
+    ctx.rect(0, 0, width, -height); // Negative height to draw upward from rear wall
+    
+    // Fill with color based on type
+    if (run.type === 'Base') {
+      ctx.fillStyle = 'rgba(255, 240, 220, 0.6)'; // Light wooden color for base
+    } else {
+      ctx.fillStyle = 'rgba(240, 245, 255, 0.6)'; // Light blue-ish for upper
+    }
+    ctx.fill();
+    
+    // Stroke with color based on selection state
+    ctx.strokeStyle = selectedRun === run.id ? '#dc2626' : run.type === 'Base' ? '#d97706' : '#3b82f6';
+    ctx.lineWidth = selectedRun === run.id ? 3 : 2;
+    ctx.stroke();
+  };
+  
+  const drawRunHighlight = (ctx, run, width, height) => {
+    if (hoverRun === run.id) {
+      ctx.beginPath();
+      ctx.rect(0, 0, width, -height);
+      
+      if (run.type === 'Base') {
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.4)'; // Semi-transparent amber for base cabinets
+      } else {
+        ctx.fillStyle = 'rgba(96, 165, 250, 0.4)'; // Semi-transparent blue for upper cabinets
+      }
+      
+      ctx.fill();
+    }
+  };
+  
+  const drawRunWall = (ctx, run, width) => {
+    // Draw rear wall with dashed line
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(width, 0);
+    ctx.setLineDash([5, 3]); // Set dashed line pattern
+    ctx.strokeStyle = '#4B5563'; // Dark gray for rear wall
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.setLineDash([]); // Reset dash pattern
+  };
+  
+  const drawRunFillers = (ctx, run, width, height) => {
+    // Show start filler if start type is Wall
+    if (run.start_type === 'Wall') {
+      const fillerWidth = FILLER_WIDTH * scale;
+      ctx.fillStyle = 'rgba(180, 180, 180, 0.7)'; // Gray color for filler
+      ctx.fillRect(0, 0, fillerWidth, -height);
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(0, 0, fillerWidth, -height);
+      
+      // Add filler label
+      ctx.save();
+      ctx.translate(fillerWidth / 2, -height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.font = '10px Arial';
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'center';
+      ctx.fillText('FILLER', 0, 0);
+      ctx.restore();
+    }
+  
+    // Show end filler if end type is Wall
+    if (run.end_type === 'Wall') {
+      const fillerWidth = FILLER_WIDTH * scale;
+      
+      // Calculate where the cabinets end and filler starts
+      const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
+      const totalCabinetsWidth = run.length - startFillerWidth - FILLER_WIDTH; // Subtract both fillers
+      const cabinetsEndX = (startFillerWidth + totalCabinetsWidth) * scale;
+      
+      // Draw end filler
+      ctx.fillStyle = 'rgba(180, 180, 180, 0.7)'; // Gray color for filler
+      ctx.fillRect(cabinetsEndX, 0, fillerWidth, -height);
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cabinetsEndX, 0, fillerWidth, -height);
+      
+      // Add filler label
+      ctx.save();
+      ctx.translate(cabinetsEndX + fillerWidth / 2, -height / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.font = '10px Arial';
+      ctx.fillStyle = '#000';
+      ctx.textAlign = 'center';
+      ctx.fillText('FILLER', 0, 0);
+      ctx.restore();
+    }
+    
+    // Draw top filler indicator if applicable
+    if (run.top_filler) {
+      ctx.beginPath();
+      ctx.moveTo(0, -height);
+      ctx.lineTo(width, -height);
+      ctx.strokeStyle = '#059669'; // Green for top filler
+      ctx.lineWidth = 4;
+      ctx.stroke();
+    }
+    
+    // Draw snap indicator if snapping
+    if (run.snapInfo?.isSnapped) {
+      const edgeName = run.snapInfo.snappedEdge;
+      
+      ctx.beginPath();
+      if (edgeName === 'rear') {
+        ctx.moveTo(0, 0);
+        ctx.lineTo(width, 0);
+      } 
+      
+      ctx.strokeStyle = '#10b981'; // Green for snap indicator
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  };
+  
+  const drawRunInfo = (ctx, run, width, height) => {
+    // Draw run ID and dimensions
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    
+    // Draw run ID with updated text for islands
+    const runNumber = run.id;
+    const typeText = run.is_island ? "Island" : run.type;
+    ctx.fillText(`Run ${runNumber} (${typeText})`, width / 2, -height / 2);
+  };
+  
+  const drawRunCabinets = (ctx, run, width, height) => {
+    // Get cabinets in this run
+    const runCabinets = cabinets
+      .filter(c => c.cabinet_run_id === run.id)
+      .sort((a, b) => a.position - b.position);
+    
+    if (runCabinets.length > 0) {
+      // Draw each cabinet
+      runCabinets.forEach(cabinet => {
+        drawCabinet(ctx, cabinet, run, height);
+      });
+    }
+    
+    // Always draw the run info even if there are no cabinets
+    drawRunInfo(ctx, run, width, height);
+  };
+  
+  const drawCabinet = (ctx, cabinet, run, runHeight) => {
+    const cabinetX = cabinet.position * scale;
+    const cabinetWidth = cabinet.cabinet_width * scale;
+    const cabinetDepth = runHeight; // Use the height (negative) from the run
+    
+    // Draw cabinet outline
+    ctx.beginPath();
+    ctx.rect(cabinetX, 0, cabinetWidth, cabinetDepth);
+    ctx.fillStyle = selectedCabinet === cabinet.id 
+      ? 'rgba(252, 211, 77, 0.3)' // Amber highlight for selected cabinet
+      : cabinet.material_doors === 'WhiteOak_SlipMatch'
+        ? 'rgba(253, 230, 190, 0.6)' // Light wood color for oak
+        : 'rgba(229, 231, 235, 0.6)'; // Gray color for painted cabinets
+    ctx.fill();
+    
+    // Draw cabinet border
+    ctx.strokeStyle = selectedCabinet === cabinet.id ? '#dc2626' : '#000';
+    ctx.lineWidth = selectedCabinet === cabinet.id ? 2 : 1;
+    ctx.stroke();
+    
+    // Draw width label at bottom
+    ctx.font = '9px Arial';
+    ctx.fillStyle = '#444';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(
+      `${Math.round(cabinet.cabinet_width)}mm`, 
+      cabinetX + cabinetWidth / 2, 
+      0
+    );
+    
+    // Draw cabinet details based on type
+    drawCabinetDetails(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+  };
+  
+  const drawCabinetDetails = (ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth) => {
+    // Create shortened label based on type
+    let shortLabel = cabinet.cabinet_type;
+    if (cabinet.cabinet_type.startsWith('Base - ')) {
+      shortLabel = cabinet.cabinet_type.replace('Base - ', 'B-');
+    } else if (cabinet.cabinet_type.startsWith('Wall - ')) {
+      shortLabel = cabinet.cabinet_type.replace('Wall - ', 'W-');
+    } else if (cabinet.cabinet_type.startsWith('Tall - ')) {
+      shortLabel = cabinet.cabinet_type.replace('Tall - ', 'T-');
+    } else if (cabinet.cabinet_type.startsWith('CounterTop - ')) {
+      shortLabel = cabinet.cabinet_type.replace('CounterTop - ', 'CT-');
+    }
+  
+    // Further abbreviate common terms
+    shortLabel = shortLabel
+      .replace('Double Leaf Door', 'DblDr')
+      .replace('Leaf Door', 'LfDr')
+      .replace('Shelves', 'Shlv')
+      .replace('Integrated', 'Int')
+      .replace('Fridge_Freezer', 'Fridge')
+      .replace('ExhaustFan', 'Exhst')
+      .replace('Cooktop', 'Cktop')
+      .replace('Corner', 'Cnr');
+  
+    // If still too long, truncate
+    if (shortLabel.length > 12) {
+      shortLabel = shortLabel.substring(0, 12) + '...';
+    }
+    
+    // Draw hinge markers if applicable
+    if (cabinet.cabinet_type.includes('Door')) {
+      drawCabinetDoor(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+    } 
+    // Draw drawer lines for drawer cabinets
+    else if (cabinet.cabinet_type.includes('Drawer')) {
+      drawCabinetDrawers(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+    } 
+    // For bookcase
+    else if (cabinet.cabinet_type.includes('Bookcase')) {
+      drawCabinetBookcase(ctx, cabinetX, cabinetWidth, cabinetDepth);
+    } 
+    // For appliances
+    else if (isApplianceCabinet(cabinet.cabinet_type)) {
+      drawCabinetAppliance(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+    }
+    // For corner cabinets
+    else if (cabinet.cabinet_type.includes('Corner')) {
+      drawCabinetCorner(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+    }
+  };
+  
+  const isApplianceCabinet = (cabinetType) => {
+    return cabinetType.includes('Oven') || 
+           cabinetType.includes('Cooktop') ||
+           cabinetType.includes('Sink') ||
+           cabinetType.includes('Dishwasher') ||
+           cabinetType.includes('ExhaustFan') ||
+           cabinetType.includes('Fridge');
+  };
+  
+  const drawCabinetDoor = (ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth) => {
+    const hingeX = cabinet.hinge_right ? cabinetX + cabinetWidth - 2 : cabinetX + 2;
+    
+    // Draw hinges as small circles
+    ctx.beginPath();
+    ctx.arc(hingeX, -5, 2, 0, Math.PI * 2);
+    ctx.arc(hingeX, cabinetDepth + 5, 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#666';
+    ctx.fill();
+    
+    // Draw door division for double leaf doors
+    if (cabinet.cabinet_type.includes('Double')) {
+      ctx.beginPath();
+      ctx.moveTo(cabinetX + cabinetWidth / 2, 0);
+      ctx.lineTo(cabinetX + cabinetWidth / 2, cabinetDepth);
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      
+      // Two handles for double doors
+      const handleY = cabinetDepth / 2;
+      const handleSize = 3;
+      
+      // Left door handle (right side)
+      const leftHandleX = cabinet.hinge_right ? 
+        cabinetX + cabinetWidth / 2 - 5 : 
+        cabinetX + cabinetWidth / 2 - handleSize - 2;
+      
+      // Right door handle (left side)
+      const rightHandleX = cabinet.hinge_right ? 
+        cabinetX + cabinetWidth / 2 + 2 : 
+        cabinetX + cabinetWidth / 2 + 5;
+      
+      ctx.beginPath();
+      ctx.arc(leftHandleX, handleY, handleSize, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.arc(rightHandleX, handleY, handleSize, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Single handle for single door
+      const handleY = cabinetDepth / 2;
+      const handleSize = 3;
+      const handleX = cabinet.hinge_right ? 
+        cabinetX + 10 : 
+        cabinetX + cabinetWidth - 10;
+      
+      ctx.beginPath();
+      ctx.arc(handleX, handleY, handleSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  
+  const drawCabinetDrawers = (ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth) => {
+    const drawerCount = cabinet.cabinet_type.includes('2-Drawer') ? 2 :
+                       cabinet.cabinet_type.includes('3-Drawer') ? 3 : 
+                       cabinet.cabinet_type.includes('4-Drawer') ? 4 : 0;
+    
+    if (drawerCount > 0) {
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1;
+      
+      const drawerHeight = Math.abs(cabinetDepth) / drawerCount;
+      
+      for (let i = 1; i < drawerCount; i++) {
+        const y = cabinetDepth * (i / drawerCount);
+        
+        ctx.beginPath();
+        ctx.moveTo(cabinetX, y);
+        ctx.lineTo(cabinetX + cabinetWidth, y);
+        ctx.stroke();
+      }
+      
+      // Draw drawer handles
+      ctx.fillStyle = '#666';
+      for (let i = 0; i < drawerCount; i++) {
+        const handleY = cabinetDepth * ((i + 0.5) / drawerCount);
+        const handleWidth = cabinetWidth * 0.4;
+        const handleX = cabinetX + (cabinetWidth - handleWidth) / 2;
+        
+        ctx.fillRect(handleX, handleY - 1, handleWidth, 2);
+      }
+    }
+  };
+  
+  const drawCabinetBookcase = (ctx, cabinetX, cabinetWidth, cabinetDepth) => {
+    // Draw shelf lines
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    
+    const shelfCount = 3; // Typical number of shelves
+    const shelfSpacing = Math.abs(cabinetDepth) / (shelfCount + 1);
+    
+    for (let i = 1; i <= shelfCount; i++) {
+      const y = cabinetDepth * (i / (shelfCount + 1));
+      
+      ctx.beginPath();
+      ctx.moveTo(cabinetX, y);
+      ctx.lineTo(cabinetX + cabinetWidth, y);
+      ctx.stroke();
+    }
+  };
+
+  const drawCabinetAppliance = (ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth) => {
+    ctx.fillStyle = '#888';
+    
+    if (cabinet.cabinet_type.includes('Sink')) {
+      // Draw sink icon (oval shape)
+      const sinkWidth = cabinetWidth * 0.6;
+      const sinkHeight = Math.abs(cabinetDepth) * 0.5;
+      const sinkX = cabinetX + (cabinetWidth - sinkWidth) / 2;
+      const sinkY = cabinetDepth * 0.3;
+      
+      ctx.beginPath();
+      ctx.ellipse(
+        sinkX + sinkWidth / 2, 
+        sinkY, 
+        sinkWidth / 2, 
+        sinkHeight / 2, 
+        0, 0, Math.PI * 2
+      );
+      ctx.fillStyle = '#ccc';
+      ctx.fill();
+      ctx.strokeStyle = '#888';
+      ctx.stroke();
+    } 
+    else if (cabinet.cabinet_type.includes('Oven')) {
+      // Draw oven icon (rectangle with line in middle)
+      const ovenWidth = cabinetWidth * 0.8;
+      const ovenHeight = Math.abs(cabinetDepth) * 0.6;
+      const ovenX = cabinetX + (cabinetWidth - ovenWidth) / 2;
+      const ovenY = cabinetDepth * 0.2;
+      
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(ovenX, ovenY, ovenWidth, ovenHeight);
+      ctx.strokeStyle = '#888';
+      ctx.strokeRect(ovenX, ovenY, ovenWidth, ovenHeight);
+      
+      // Oven door handle
+      ctx.fillStyle = '#888';
+      ctx.fillRect(ovenX + ovenWidth / 2 - 10, ovenY + ovenHeight - 5, 20, 3);
+    }
+    else if (cabinet.cabinet_type.includes('Cooktop')) {
+      // Draw cooktop burner circles
+      const numBurners = cabinet.cabinet_type.includes('30') ? 4 : 5;
+      const burnerRadius = cabinetWidth / (numBurners * 3);
+      const cooktopY = cabinetDepth * 0.3;
+      
+      ctx.fillStyle = '#333';
+      
+      if (numBurners === 4) {
+        // 2x2 grid for 4 burners
+        const spacing = cabinetWidth / 3;
+        const startX = cabinetX + spacing / 2;
+        
+        for (let row = 0; row < 2; row++) {
+          for (let col = 0; col < 2; col++) {
+            ctx.beginPath();
+            ctx.arc(
+              startX + col * spacing, 
+              cooktopY + row * spacing / 2, 
+              burnerRadius, 
+              0, Math.PI * 2
+            );
+            ctx.fill();
+          }
+        }
+      } else {
+        // 5 burners - one in center, 4 around
+        const centerX = cabinetX + cabinetWidth / 2;
+        const spacing = cabinetWidth / 4;
+        
+        // Center burner
+        ctx.beginPath();
+        ctx.arc(centerX, cooktopY, burnerRadius * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Corner burners
+        for (let i = 0; i < 4; i++) {
+          const angle = i * Math.PI / 2;
+          ctx.beginPath();
+          ctx.arc(
+            centerX + Math.cos(angle) * spacing, 
+            cooktopY + Math.sin(angle) * spacing / 2, 
+            burnerRadius, 
+            0, Math.PI * 2
+          );
+          ctx.fill();
+        }
+      }
+    }
+    else if (cabinet.cabinet_type.includes('Fridge')) {
+      // Draw fridge icon
+      const fridgeWidth = cabinetWidth * 0.9;
+      const fridgeHeight = Math.abs(cabinetDepth) * 0.9;
+      const fridgeX = cabinetX + (cabinetWidth - fridgeWidth) / 2;
+      const fridgeY = cabinetDepth * 0.05;
+      
+      // Fridge body
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(fridgeX, fridgeY, fridgeWidth, fridgeHeight);
+      ctx.strokeStyle = '#888';
+      ctx.strokeRect(fridgeX, fridgeY, fridgeWidth, fridgeHeight);
+      
+      // Fridge/freezer divider line
+      const dividerY = fridgeY + fridgeHeight * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(fridgeX, dividerY);
+      ctx.lineTo(fridgeX + fridgeWidth, dividerY);
+      ctx.stroke();
+      
+      // Handles
+      ctx.fillStyle = '#888';
+      ctx.fillRect(fridgeX + fridgeWidth - 5, fridgeY + fridgeHeight * 0.15, 3, 20);
+      ctx.fillRect(fridgeX + fridgeWidth - 5, fridgeY + fridgeHeight * 0.6, 3, 20);
+    }
+    else if (cabinet.cabinet_type.includes('ExhaustFan')) {
+      // Draw exhaust fan icon
+      const fanWidth = cabinetWidth * 0.7;
+      const fanHeight = Math.abs(cabinetDepth) * 0.4;
+      const fanX = cabinetX + (cabinetWidth - fanWidth) / 2;
+      const fanY = cabinetDepth * 0.2;
+      
+      // Fan housing
+      ctx.fillStyle = '#ccc';
+      ctx.fillRect(fanX, fanY, fanWidth, fanHeight);
+      ctx.strokeStyle = '#888';
+      ctx.strokeRect(fanX, fanY, fanWidth, fanHeight);
+      
+      // Vent lines
+      const vents = 5;
+      const ventSpacing = fanWidth / (vents + 1);
+      for (let i = 1; i <= vents; i++) {
+        ctx.beginPath();
+        ctx.moveTo(fanX + i * ventSpacing, fanY);
+        ctx.lineTo(fanX + i * ventSpacing, fanY + fanHeight);
+        ctx.stroke();
+      }
+    }
+  };
+  
+  const drawCabinetCorner = (ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth) => {
+    ctx.fillStyle = '#ddd';
+    
+    // Draw diagonal line for corner
+    ctx.beginPath();
+    ctx.moveTo(cabinetX, 0);
+    ctx.lineTo(cabinetX + cabinetWidth, cabinetDepth);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Draw direction arrow
+    const isLeft = cabinet.cabinet_type.includes('Left');
+    const arrowX = cabinetX + cabinetWidth / 2;
+    const arrowY = cabinetDepth / 2;
+    const arrowSize = 8;
+    
+    ctx.beginPath();
+    if (isLeft) {
+      ctx.moveTo(arrowX - arrowSize, arrowY);
+      ctx.lineTo(arrowX, arrowY - arrowSize);
+      ctx.lineTo(arrowX, arrowY + arrowSize);
+    } else {
+      ctx.moveTo(arrowX + arrowSize, arrowY);
+      ctx.lineTo(arrowX, arrowY - arrowSize);
+      ctx.lineTo(arrowX, arrowY + arrowSize);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#888';
+    ctx.fill();
   };
 
   useEffect(() => {
