@@ -2934,10 +2934,29 @@ const updateCabinetProperty = (cabinetId, property, value) => {
 
 
 const exportRoomData = () => {
-  // Create the export data structure directly from the existing room data
+  // Create a mapping from existing room IDs to sequential integers
+  const roomIdMap = new Map();
+  
+  // Find the main room and assign it ID 0
+  const mainRoomIndex = rooms.findIndex(room => room.isMain);
+  if (mainRoomIndex !== -1) {
+    roomIdMap.set(rooms[mainRoomIndex].id, 0);
+  }
+  
+  // Assign sequential IDs to other rooms starting from 1
+  let nextId = 1;
+  rooms.forEach(room => {
+    if (!room.isMain && !roomIdMap.has(room.id)) {
+      roomIdMap.set(room.id, nextId++);
+    }
+  });
+
+  // Create the export data structure with mapped IDs
   const exportData = rooms.map(room => {
+    const mappedId = roomIdMap.get(room.id);
+    
     return {
-      id: room.id,
+      id: mappedId, // Use the mapped integer ID
       isMain: room.isMain,
       isComplete: room.isComplete,
       points: {
@@ -2970,9 +2989,9 @@ const exportRoomData = () => {
     };
   });
 
-  // Create cabinet run export data
+  // Also need to update cabinet run references to rooms
   const cabinetRunData = cabinetRuns.map(run => {
-    return {
+    const exportRun = {
       id: run.id,
       type: run.type,
       position: {
@@ -2991,9 +3010,25 @@ const exportRoomData = () => {
         is_island: run.is_island
       }
     };
+    
+    // If the run is snapped to a wall, update the room ID reference
+    if (run.snapInfo?.isSnapped && run.snapInfo.snappedToWall) {
+      const originalRoomId = run.snapInfo.snappedToWall.roomId;
+      if (roomIdMap.has(originalRoomId)) {
+        exportRun.snapInfo = {
+          ...run.snapInfo,
+          snappedToWall: {
+            roomId: roomIdMap.get(originalRoomId),
+            wallIndex: run.snapInfo.snappedToWall.wallIndex
+          }
+        };
+      }
+    }
+    
+    return exportRun;
   });
 
-  // Add cabinet data to the export
+  // Add cabinet data to the export (no changes needed to cabinet data)
   const cabinetData = cabinets.map(cabinet => {
     return {
       id: cabinet.id,
