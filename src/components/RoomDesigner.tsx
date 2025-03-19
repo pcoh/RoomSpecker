@@ -161,6 +161,10 @@ interface Cabinet {
   hinge_right: boolean;
   material_doors: string;
   position: number; // Position from left in mm
+  floating_shelf_depth?: number;
+  floating_shelf_height?: number;
+  floating_shelf_num?: number;
+  floating_shelf_vert_spacing?: number;
 }
 
 const POINT_RADIUS = 5;
@@ -2785,7 +2789,12 @@ const addCabinetToRun = (runId) => {
     cabinet_width: width,
     hinge_right: newCabinetHingeRight,
     material_doors: newCabinetMaterial,
-    position: position
+    position: position,
+    // Add default values for floating shelf parameters
+    floating_shelf_depth: 200, // Default depth of 200mm
+    floating_shelf_height: 100, // Default height of 100mm
+    floating_shelf_num: 1, // Default 1 shelf
+    floating_shelf_vert_spacing: 350 // Default vertical spacing of 350mm
   };
   
   // First update the cabinets state
@@ -2953,6 +2962,19 @@ const updateCabinetProperty = (cabinetId, property, value) => {
   const runId = cabinet.cabinet_run_id;
   const run = cabinetRuns.find(r => r.id === runId);
   if (!run) return;
+  
+  // Handle special case for floating shelf properties
+  if (property.startsWith('floating_shelf_')) {
+    // Only update if this is a floating shelf cabinet or if enabling a property on a floating shelf cabinet
+    if (cabinet.cabinet_type === 'Wall - Floating Shelf') {
+      setCabinets(prevCabinets => {
+        return prevCabinets.map(c => 
+          c.id === cabinetId ? { ...c, [property]: value } : c
+        );
+      });
+    }
+    return;
+  }
   
   // Handle special case for width properties or cabinet type change
   if (property === 'cabinet_width' || property === 'cabinet_type') {
@@ -3178,9 +3200,9 @@ const exportRoomData = () => {
     return exportRun;
   });
 
-  // Add cabinet data to the export (no changes needed to cabinet data)
+  // Add cabinet data to the export (updated to include floating shelf properties)
   const cabinetData = cabinets.map(cabinet => {
-    return {
+    const exportCabinet = {
       id: cabinet.id,
       cabinet_run_id: cabinet.cabinet_run_id,
       cabinet_type: cabinet.cabinet_type,
@@ -3189,6 +3211,16 @@ const exportRoomData = () => {
       material_doors: cabinet.material_doors,
       position: Math.round(cabinet.position)
     };
+    
+    // Only include floating shelf properties if this is a floating shelf
+    if (cabinet.cabinet_type === 'Wall - Floating Shelf') {
+      exportCabinet.floating_shelf_depth = Math.round(cabinet.floating_shelf_depth || 200);
+      exportCabinet.floating_shelf_height = Math.round(cabinet.floating_shelf_height || 100);
+      exportCabinet.floating_shelf_num = Math.round(cabinet.floating_shelf_num || 1);
+      exportCabinet.floating_shelf_vert_spacing = Math.round(cabinet.floating_shelf_vert_spacing || 350);
+    }
+    
+    return exportCabinet;
   });
 
   // Additional metadata with cabinet runs and cabinets included
@@ -5441,7 +5473,7 @@ const startAddingSecondaryRoom = () => {
   const drawCabinet = (ctx, cabinet, run, runHeight) => {
     const cabinetX = cabinet.position * scale;
     const cabinetWidth = cabinet.cabinet_width * scale;
-    const cabinetDepth = runHeight; // Use the height (negative) from the run
+    const cabinetDepth = -runHeight; // Use the height (negative) from the run
     
     // Draw cabinet outline
     ctx.beginPath();
@@ -5502,8 +5534,22 @@ const startAddingSecondaryRoom = () => {
       shortLabel = shortLabel.substring(0, 12) + '...';
     }
     
-    // Draw hinge markers if applicable
-    if (cabinet.cabinet_type.includes('Door')) {
+    // Draw cabinet label in the middle of the cabinet
+    ctx.font = '9px Arial';
+    ctx.fillStyle = '#444';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(
+      shortLabel,
+      cabinetX + cabinetWidth / 2,
+      cabinetDepth / 2
+    );
+    
+    // Handle various cabinet types
+    if (cabinet.cabinet_type === 'Wall - Floating Shelf') {
+      drawCabinetFloatingShelf(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+    }
+    else if (cabinet.cabinet_type.includes('Door')) {
       drawCabinetDoor(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
     } 
     // Draw drawer lines for drawer cabinets
@@ -5521,6 +5567,78 @@ const startAddingSecondaryRoom = () => {
     // For corner cabinets
     else if (cabinet.cabinet_type.includes('Corner')) {
       drawCabinetCorner(ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth);
+    }
+  };
+  
+  // New function to draw floating shelves
+  const drawCabinetFloatingShelf = (ctx, cabinet, cabinetX, cabinetWidth, cabinetDepth) => {
+    const numShelves = cabinet.floating_shelf_num || 1;
+    const shelfHeight = cabinet.floating_shelf_height || 100;
+    const shelfDepth = -cabinet.floating_shelf_depth || 200;
+    const vertSpacing = cabinet.floating_shelf_vert_spacing || 350;
+    
+    // Scale parameters to canvas
+    const scaledShelfHeight = (shelfHeight / Math.abs(cabinetDepth * 2)) * Math.abs(cabinetDepth);
+    const scaledShelfDepth = cabinetDepth /4
+
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    
+    // Draw each shelf
+    // for (let i = 0; i < numShelves; i++) {
+      // Calculate y position for this shelf - distribute evenly if multiple shelves
+      // const yPosition = i === 0 
+        // ? cabinetDepth * 0.2 
+        // : cabinetDepth * 0.2 - (i * vertSpacing / 1000) * Math.abs(cabinetDepth);
+      
+      
+      const yPosition = 0 
+        // Draw shelf rectangle
+      ctx.fillStyle = '#ddd';
+      ctx.fillRect(cabinetX, yPosition, cabinetWidth, scaledShelfDepth);
+      ctx.strokeRect(cabinetX, yPosition, cabinetWidth, scaledShelfDepth);
+      
+      // Draw depth indicator - small ticks on the sides
+      const depthIndicator = (shelfDepth / 1000) * Math.abs(cabinetDepth);
+      
+      
+      
+      // Add info text for first shelf only
+      ctx.save();
+      ctx.font = '8px Arial';
+      ctx.fillStyle = '#444';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        `${numShelves} shelf${numShelves > 1 ? 's' : ''}, ${shelfDepth}mm depth`, 
+        cabinetX + cabinetWidth/2 - 40, 
+        cabinetDepth - 5
+      );
+      ctx.restore();
+      
+    // }
+    
+    // Add visual indicator for spacing
+    if (numShelves > 1) {
+      const firstShelfY = cabinetDepth * 0.2;
+      const secondShelfY = cabinetDepth * 0.2 - (vertSpacing / 1000) * Math.abs(cabinetDepth);
+      
+      ctx.setLineDash([2, 2]);
+      ctx.strokeStyle = '#999';
+      ctx.beginPath();
+      ctx.moveTo(cabinetX + cabinetWidth + 10, firstShelfY - scaledShelfHeight);
+      ctx.lineTo(cabinetX + cabinetWidth + 10, secondShelfY);
+      ctx.stroke();
+      
+      // Add spacing label
+      ctx.setLineDash([]);
+      ctx.font = '8px Arial';
+      ctx.fillStyle = '#666';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        `${vertSpacing}mm`,
+        cabinetX + cabinetWidth + 12,
+        (firstShelfY + secondShelfY) / 2
+      );
     }
   };
   
@@ -6811,8 +6929,7 @@ const startAddingSecondaryRoom = () => {
                           className="w-4 h-4 border border-gray-300 rounded"
                         />
                       </div>
-                    </div>
-                    
+                    </div>                    
                     <button
                       onClick={() => addCabinetToRun(selectedRun)}
                       className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
@@ -6891,6 +7008,57 @@ const startAddingSecondaryRoom = () => {
                               className="w-4 h-4 border border-gray-300 rounded"
                               disabled={!cabinet.cabinet_type.includes('Door')}
                             />
+                          </td>
+                          {/* Add Floating Shelf specific properties - after hinge section in the cabinet properties UI */}
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            {cabinet.cabinet_type === 'Wall - Floating Shelf' && (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-1">
+                                  <label className="text-xs">Depth:</label>
+                                  <input
+                                    type="number"
+                                    value={cabinet.floating_shelf_depth || 200}
+                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_depth', Number(e.target.value))}
+                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                    min={100}
+                                    max={400}
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <label className="text-xs">Height:</label>
+                                  <input
+                                    type="number"
+                                    value={cabinet.floating_shelf_height || 100}
+                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_height', Number(e.target.value))}
+                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                    min={50}
+                                    max={150}
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <label className="text-xs">Count:</label>
+                                  <input
+                                    type="number"
+                                    value={cabinet.floating_shelf_num || 1}
+                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_num', Number(e.target.value))}
+                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                    min={1}
+                                    max={5}
+                                  />
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <label className="text-xs">Spacing:</label>
+                                  <input
+                                    type="number"
+                                    value={cabinet.floating_shelf_vert_spacing || 350}
+                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_vert_spacing', Number(e.target.value))}
+                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                    min={200}
+                                    max={500}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-2 whitespace-nowrap text-sm">
                             <button
