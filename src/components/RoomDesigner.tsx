@@ -73,7 +73,7 @@ interface ContextMenuState {
 
 // Cabinet run interface definition
 interface CabinetRun {
-  id: string;
+  id: number;
   start_pos_x: number; // Position X of the run's reference corner in mm
   start_pos_y: number; // Position Y of the run's reference corner in mm
   length: number;      // Length in mm
@@ -98,7 +98,7 @@ interface CabinetRun {
 
 // Type for run drag operations
 interface RunDragInfo {
-  id: string;
+  id: number;    // Changed from string to number
   startX: number;    // X coordinate at start of drag
   startY: number;    // Y coordinate at start of drag
   initialRotation: number; // Rotation at start of drag
@@ -106,7 +106,7 @@ interface RunDragInfo {
 
 // Type for run selection
 interface RunSelection {
-  id: string;
+  id: number;  // Changed from string to number
   isResizing: boolean;
   resizeHandle?: 'length' | 'depth'; // Which dimension is being resized
 }
@@ -128,7 +128,7 @@ interface RunSnapSettings {
 
 // For handling run editing UI state
 interface RunEditingState {
-  [key: string]: {
+  [key: number]: {  // Changed from string to number
     length?: string;
     depth?: string;
     rotation_z?: string;
@@ -155,7 +155,7 @@ interface RunSnapResult {
 
 interface Cabinet {
   id: string;
-  cabinet_run_id: string;
+  cabinet_run_id: number;  // Changed from string to number
   cabinet_type: string;
   cabinet_width: number;
   hinge_right: boolean;
@@ -226,10 +226,11 @@ const RoomDesigner: React.FC = () => {
   const [windowHeight, setWindowHeight] = useState<number>(DEFAULT_WINDOW_HEIGHT);
   const [windowSillHeight, setWindowSillHeight] = useState<number>(DEFAULT_WINDOW_SILL_HEIGHT);
   const lastDraggedPointRef = useRef<{roomId: string, index: number} | null>(null);
-  const [forceUpdateTimestamp, setForceUpdateTimestamp] = useState(0);
+  const [forceUpdateTimestamp, setForceUpdateTimestamp] = useState(0);  
   const [cabinetRuns, setCabinetRuns] = useState<CabinetRun[]>([]); // State for cabinet runs
-  const [selectedRun, setSelectedRun] = useState<string | null>(null);  // State for run selection
+  const [selectedRun, setSelectedRun] = useState<number | null>(null);  // Changed from string to number
   const [draggedRun, setDraggedRun] = useState<RunDragInfo | null>(null); // State for tracking run dragging
+
   const [resizingRun, setResizingRun] = useState<{
     id: string;
     handle: 'length' | 'depth';
@@ -2371,7 +2372,7 @@ const createCabinetRun = (position: Point) => {
   const highestId = cabinetRuns.length > 0 
     ? Math.max(...cabinetRuns.map(run => parseInt(run.id.toString())))
     : 0;
-  const newRunId = (highestId + 1).toString();
+  const newRunId = highestId + 1;
   
   // Get position from snap result or mouse position for the rear-left corner
   let posX = snapResult.shouldSnap && snapResult.newX !== undefined ? snapResult.newX : position.x;
@@ -2776,7 +2777,7 @@ const addCabinetToRun = (runId) => {
   const minWidth = getMinCabinetWidth(cabinetType);
   const width = fixedWidth !== null ? fixedWidth : Math.max(minWidth, newCabinetWidth);
   
-  // Create a new cabinet
+  // Create a new cabinet with cab prefix and numeric suffix
   const highestId = cabinets.length > 0 
     ? Math.max(...cabinets.map(cab => parseInt(cab.id.substring(3)))) // Assuming IDs like "cab1", "cab2"
     : 0;
@@ -2784,7 +2785,7 @@ const addCabinetToRun = (runId) => {
   
   const newCabinet = {
     id: newCabinetId,
-    cabinet_run_id: runId,
+    cabinet_run_id: runId,  // Already an integer from caller
     cabinet_type: cabinetType,
     cabinet_width: width,
     hinge_right: newCabinetHingeRight,
@@ -3164,7 +3165,7 @@ const exportRoomData = () => {
   // Also need to update cabinet run references to rooms
   const cabinetRunData = cabinetRuns.map(run => {
     const exportRun = {
-      id: run.id,
+      id: run.id, // Already an integer
       type: run.type,
       position: {
         x: Math.round(run.start_pos_x),
@@ -3200,11 +3201,11 @@ const exportRoomData = () => {
     return exportRun;
   });
 
-  // Add cabinet data to the export (updated to include floating shelf properties)
+  // Add cabinet data to the export (with integer cabinet_run_id)
   const cabinetData = cabinets.map(cabinet => {
     const exportCabinet = {
       id: cabinet.id,
-      cabinet_run_id: cabinet.cabinet_run_id,
+      cabinet_run_id: cabinet.cabinet_run_id, // Already an integer
       cabinet_type: cabinet.cabinet_type,
       cabinet_width: Math.round(cabinet.cabinet_width),
       hinge_right: cabinet.hinge_right,
