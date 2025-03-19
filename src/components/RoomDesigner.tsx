@@ -40,6 +40,10 @@ interface Door {
   endPoint: Point;
   width: number;
   position: number;
+  height: number;         // New field for door height
+  frameThickness: number; // New field for frame thickness
+  frameWidth: number;     // New field for frame width
+  material: string;       // New field for material
 }
 
 interface Window {
@@ -719,13 +723,17 @@ const RoomDesigner: React.FC = () => {
         Math.pow(safeStartPoint.y - safeP1.y, 2)
       );
       
-      // Create the door with safe copies
+      // Create the door with safe copies and new default values
       const newDoor: Door = {
         wallIndex,
         startPoint: safeStartPoint,
         endPoint: safeEndPoint,
         width,
-        position: startDist
+        position: startDist,
+        height: 2032,                      // Default height
+        frameThickness: 20,                // Default frame thickness
+        frameWidth: 100,                   // Default frame width
+        material: "WhiteOak_SlipMatch_Vert" // Default material
       };
       
       console.log("New door object:", JSON.stringify(newDoor));
@@ -739,14 +747,12 @@ const RoomDesigner: React.FC = () => {
         
         // Create a deep copy to avoid any reference issues
         const updatedRooms = prevRooms.map(r => {
-          if (r.id === roomId) {
-            console.log("Updating room:", r.id);
-            // Create a new array of doors
-            const newDoors = [...r.doors, newDoor];
-            console.log("New doors count:", newDoors.length);
-            return { ...r, doors: newDoors };
-          }
-          return r;
+          if (r.id !== roomId) return r;
+          console.log("Updating room:", r.id);
+          // Create a new array of doors
+          const newDoors = [...r.doors, newDoor];
+          console.log("New doors count:", newDoors.length);
+          return { ...r, doors: newDoors };
         });
         
         console.log("Updated rooms count:", updatedRooms.length);
@@ -759,6 +765,60 @@ const RoomDesigner: React.FC = () => {
       console.error("Error in addDoor:", error);
       console.error("Error stack:", error.stack);
     }
+  };
+
+  const updateDoorHeight = (roomId: string, doorIndex: number, newHeight: number) => {
+    if (newHeight <= 0) return;
+    
+    setRooms(rooms.map(room => {
+      if (room.id !== roomId) return room;
+  
+      const newDoors = [...room.doors];
+      const door = newDoors[doorIndex];
+      door.height = newHeight;
+      
+      return { ...room, doors: newDoors };
+    }));
+  };
+  
+  const updateDoorFrameThickness = (roomId: string, doorIndex: number, newThickness: number) => {
+    if (newThickness <= 0) return;
+    
+    setRooms(rooms.map(room => {
+      if (room.id !== roomId) return room;
+  
+      const newDoors = [...room.doors];
+      const door = newDoors[doorIndex];
+      door.frameThickness = newThickness;
+      
+      return { ...room, doors: newDoors };
+    }));
+  };
+  
+  const updateDoorFrameWidth = (roomId: string, doorIndex: number, newWidth: number) => {
+    if (newWidth <= 0) return;
+    
+    setRooms(rooms.map(room => {
+      if (room.id !== roomId) return room;
+  
+      const newDoors = [...room.doors];
+      const door = newDoors[doorIndex];
+      door.frameWidth = newWidth;
+      
+      return { ...room, doors: newDoors };
+    }));
+  };
+  
+  const updateDoorMaterial = (roomId: string, doorIndex: number, newMaterial: string) => {
+    setRooms(rooms.map(room => {
+      if (room.id !== roomId) return room;
+  
+      const newDoors = [...room.doors];
+      const door = newDoors[doorIndex];
+      door.material = newMaterial;
+      
+      return { ...room, doors: newDoors };
+    }));
   };
   
 
@@ -3044,7 +3104,11 @@ const exportRoomData = () => {
         count: room.doors.length,
         wallIndices: room.doors.map(door => door.wallIndex),
         widths: room.doors.map(door => Math.round(door.width)),
-        positions: room.doors.map(door => Math.round(door.position))
+        positions: room.doors.map(door => Math.round(door.position)),
+        heights: room.doors.map(door => Math.round(door.height || 2032)), // New property
+        frameThicknesses: room.doors.map(door => Math.round(door.frameThickness || 20)), // New property
+        frameWidths: room.doors.map(door => Math.round(door.frameWidth || 100)), // New property
+        materials: room.doors.map(door => door.material || "WhiteOak_SlipMatch_Vert") // New property
       },
       windows: {
         count: room.windows.length,
@@ -3555,7 +3619,7 @@ const fallbackCopyTextToClipboard = (text: string) => {
         console.log(`Door ${i} extends beyond wall, adjusting...`);
         // Adjust to fit within the wall
         const adjustedDoor = {
-          ...door,
+          ...door, // Preserve all other properties including the new ones
           position: Math.max(0, newWallLength - door.width),
           startPoint: {
             x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
@@ -3571,7 +3635,7 @@ const fallbackCopyTextToClipboard = (text: string) => {
       }
       
       const updatedDoor = {
-        ...door,
+        ...door, // Preserve all other properties including the new ones
         startPoint: newStartPoint,
         endPoint: newEndPoint
       };
@@ -6234,6 +6298,18 @@ const startAddingSecondaryRoom = () => {
                     Width (mm)
                   </th>
                   <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Height (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Frame Thickness (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Frame Width (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Material
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
@@ -6262,6 +6338,41 @@ const startAddingSecondaryRoom = () => {
                         onChange={(e) => updateDoorWidth(activeRoom.id, index, Number(e.target.value))}
                         className="w-24 px-2 py-1 border border-gray-300 rounded"
                       />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.height) || 2032}
+                        onChange={(e) => updateDoorHeight(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.frameThickness) || 20}
+                        onChange={(e) => updateDoorFrameThickness(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.frameWidth) || 100}
+                        onChange={(e) => updateDoorFrameWidth(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <select
+                        value={door.material || "WhiteOak_SlipMatch_Vert"}
+                        onChange={(e) => updateDoorMaterial(activeRoom.id, index, e.target.value)}
+                        className="w-40 px-2 py-1 border border-gray-300 rounded"
+                      >
+                        <option value="WhiteOak_SlipMatch_Vert">WhiteOak SlipMatch Vert</option>
+                        <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                        <option value="Paint - Gray">Paint - Gray</option>
+                      </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <button
