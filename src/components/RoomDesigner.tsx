@@ -3078,6 +3078,31 @@ const exportRoomData = () => {
   const exportData = rooms.map(room => {
     const mappedId = roomIdMap.get(room.id);
     
+    // Generate walls data based on room properties
+    let wallsData = {
+      count: 0,
+      from: [],
+      to: []
+    };
+    
+    if (room.isComplete) {
+      if (room.noClosingWall) {
+        // For rooms with noClosingWall flag, don't include wall connecting last to first point
+        wallsData.count = room.points.length - 1;
+        for (let i = 0; i < room.points.length - 1; i++) {
+          wallsData.from.push(i);
+          wallsData.to.push(i + 1);
+        }
+      } else {
+        // Normal complete rooms include all walls (including one connecting last to first)
+        wallsData.count = room.points.length;
+        for (let i = 0; i < room.points.length; i++) {
+          wallsData.from.push(i);
+          wallsData.to.push((i + 1) % room.points.length);
+        }
+      }
+    }
+    
     return {
       id: mappedId, // Use the mapped integer ID
       isMain: room.isMain,
@@ -3091,15 +3116,7 @@ const exportRoomData = () => {
         x: room.points.map(point => Math.round(point.x)),
         y: room.points.map(point => Math.round(point.y))
       },
-      walls: room.isComplete ? {
-        count: room.points.length,
-        from: room.points.map((_, index) => index),
-        to: room.points.map((_, index) => (index + 1) % room.points.length),
-      } : {
-        count: 0,
-        from: [],
-        to: [],
-      },
+      walls: wallsData,
       doors: {
         count: room.doors.length,
         wallIndices: room.doors.map(door => door.wallIndex),
