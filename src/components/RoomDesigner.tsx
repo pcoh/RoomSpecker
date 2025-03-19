@@ -680,7 +680,8 @@ const RoomDesigner: React.FC = () => {
 
   const addDoor = (roomId: string, wallIndex: number, startPoint: Point, endPoint: Point) => {
     try {
-      console.log("addDoor called with:", { roomId, wallIndex, startPoint, endPoint });
+      console.log("========== ADD DOOR FUNCTION ==========");
+      console.log("Input parameters:", { roomId, wallIndex, startPoint, endPoint });
       
       // Find the room
       const room = rooms.find(r => r.id === roomId);
@@ -688,6 +689,7 @@ const RoomDesigner: React.FC = () => {
         console.error(`Room with ID ${roomId} not found`);
         return;
       }
+      console.log("Found room:", room.id, "isMain:", room.isMain);
       
       // Validate wall index
       if (wallIndex < 0 || wallIndex >= room.points.length) {
@@ -698,6 +700,7 @@ const RoomDesigner: React.FC = () => {
       // Get wall endpoints
       const p1 = room.points[wallIndex];
       const p2 = room.points[(wallIndex + 1) % room.points.length];
+      console.log("Wall points:", { p1, p2 });
       
       // Create safe copies of all points
       const safeP1 = { x: p1.x, y: p1.y };
@@ -725,24 +728,36 @@ const RoomDesigner: React.FC = () => {
         position: startDist
       };
       
-      console.log("Creating new door:", newDoor);
+      console.log("New door object:", JSON.stringify(newDoor));
+      
+      // Get a snapshot of rooms before update
+      console.log("Rooms count before update:", rooms.length);
       
       // Use a safer version of state update
       setRooms(prevRooms => {
+        console.log("Inside setRooms callback, prevRooms count:", prevRooms.length);
+        
         // Create a deep copy to avoid any reference issues
-        return prevRooms.map(r => {
+        const updatedRooms = prevRooms.map(r => {
           if (r.id === roomId) {
+            console.log("Updating room:", r.id);
             // Create a new array of doors
             const newDoors = [...r.doors, newDoor];
+            console.log("New doors count:", newDoors.length);
             return { ...r, doors: newDoors };
           }
           return r;
         });
+        
+        console.log("Updated rooms count:", updatedRooms.length);
+        return updatedRooms;
       });
       
       console.log("Door added successfully to room:", roomId);
+      console.log("========== ADD DOOR FUNCTION END ==========");
     } catch (error) {
       console.error("Error in addDoor:", error);
+      console.error("Error stack:", error.stack);
     }
   };
   
@@ -3263,6 +3278,7 @@ const fallbackCopyTextToClipboard = (text: string) => {
     // Door handling section in handleCanvasMouseDown
     if (addingDoor) {
       try {
+        console.log("========== DOOR PLACEMENT LOGIC ==========");
         const closestLine = findClosestLine(mousePos);
         console.log("Closest line for door:", closestLine);
         
@@ -3282,10 +3298,14 @@ const fallbackCopyTextToClipboard = (text: string) => {
           
           console.log("Setting door start point:", newStartPoint);
           setDoorStartPoint(newStartPoint);
+          console.log("========== DOOR PLACEMENT LOGIC END (START POINT SET) ==========");
           return;
         } 
         
         // We already have a start point, now add the door if on same wall
+        console.log("Door start point already set:", doorStartPoint);
+        console.log("Current closest line:", closestLine);
+        
         if (doorStartPoint.roomId === closestLine.roomId && 
             doorStartPoint.wallIndex === closestLine.wallIndex) {
           
@@ -3302,6 +3322,24 @@ const fallbackCopyTextToClipboard = (text: string) => {
             y: closestLine.point.y 
           };
           
+          console.log("Start point:", startPointPlain);
+          console.log("End point:", endPointPlain);
+          
+          // Try to find the specific room to verify
+          const targetRoom = rooms.find(r => r.id === doorStartPoint.roomId);
+          console.log("Target room found:", targetRoom ? true : false);
+          if (targetRoom) {
+            console.log("Target room is main:", targetRoom.isMain);
+            console.log("Target room wall count:", targetRoom.points.length);
+          }
+          
+          console.log("About to call addDoor with params:", {
+            roomId: doorStartPoint.roomId,
+            wallIndex: doorStartPoint.wallIndex,
+            startPointPlain,
+            endPointPlain
+          });
+          
           // Add the door
           addDoor(
             doorStartPoint.roomId,
@@ -3311,13 +3349,16 @@ const fallbackCopyTextToClipboard = (text: string) => {
           );
           
           // Reset state
+          console.log("Resetting door placement state");
           setAddingDoor(false);
           setDoorStartPoint(null);
         } else {
           console.log("Clicked on a different wall - must click on same wall to complete door");
         }
+        console.log("========== DOOR PLACEMENT LOGIC END ==========");
       } catch (error) {
         console.error("Error in door placement logic:", error);
+        console.error("Error stack:", error.stack);
         // Reset door placement state on error
         setAddingDoor(false);
         setDoorStartPoint(null);
@@ -3325,9 +3366,10 @@ const fallbackCopyTextToClipboard = (text: string) => {
       return;
     }
   
-    // Window handling
+    // Window handling section in handleCanvasMouseDown
     if (addingWindow) {
       try {
+        console.log("========== WINDOW PLACEMENT LOGIC ==========");
         const closestLine = findClosestLine(mousePos);
         console.log("Closest line for window:", closestLine);
         
@@ -3338,7 +3380,11 @@ const fallbackCopyTextToClipboard = (text: string) => {
               wallIndex: closestLine.wallIndex,
               point: {...closestLine.point} // Create a copy to avoid reference issues
             });
-            console.log("Window start point set:", closestLine);
+            console.log("Window start point set:", {
+              roomId: closestLine.roomId,
+              wallIndex: closestLine.wallIndex,
+              point: closestLine.point
+            });
           } else if (windowStartPoint.roomId === closestLine.roomId && 
                     windowStartPoint.wallIndex === closestLine.wallIndex) {
             console.log("Attempting to add window", {
@@ -3347,6 +3393,14 @@ const fallbackCopyTextToClipboard = (text: string) => {
               startPoint: windowStartPoint.point,
               endPoint: closestLine.point
             });
+            
+            // Try to find the specific room to verify
+            const targetRoom = rooms.find(r => r.id === windowStartPoint.roomId);
+            console.log("Target room found:", targetRoom ? true : false);
+            if (targetRoom) {
+              console.log("Target room is main:", targetRoom.isMain);
+              console.log("Target room wall count:", targetRoom.points.length);
+            }
             
             addWindow(
               windowStartPoint.roomId, 
@@ -3358,8 +3412,10 @@ const fallbackCopyTextToClipboard = (text: string) => {
             setWindowStartPoint(null);
           }
         }
+        console.log("========== WINDOW PLACEMENT LOGIC END ==========");
       } catch (error) {
         console.error("Error handling window placement:", error);
+        console.error("Error stack:", error.stack);
         setAddingWindow(false);
         setWindowStartPoint(null);
       }
@@ -3430,29 +3486,37 @@ const fallbackCopyTextToClipboard = (text: string) => {
   };
   
   const getUpdatedDoorsAndWindows = (room: Room, newPoints: Point[], oldPoints: Point[]) => {
+    console.log("========== GET UPDATED DOORS AND WINDOWS ==========");
+    console.log("Room ID:", room.id, "Is Main:", room.isMain);
+    console.log("Doors count:", room.doors.length, "Windows count:", room.windows.length);
+    
     // Skip if room is not complete or has no doors/windows
     if (!room.isComplete || (room.doors.length === 0 && room.windows.length === 0)) {
+      console.log("Room not complete or has no doors/windows - returning original");
       return { doors: room.doors, windows: room.windows };
     }
     
     // Update doors within this room
-    const updatedDoors = room.doors.map(door => {
-      // Door update logic remains unchanged
-      // ...
-    });
-    
-    // Update windows - using the same approach
-    const updatedWindows = room.windows.map(window => {
-      const wallIndex = window.wallIndex;
+    console.log("Updating doors for room:", room.id);
+    const updatedDoors = room.doors.map((door, i) => {
+      console.log(`Processing door ${i}:`, door);
+      const wallIndex = door.wallIndex;
       
-      // Skip windows that aren't on walls that exist
+      // Skip doors that aren't on walls that exist
       if (wallIndex >= oldPoints.length || wallIndex >= newPoints.length) {
-        return window;
+        console.log(`Door ${i} has invalid wallIndex ${wallIndex}, skipping`);
+        return door;
       }
+      
+      // Get old wall vertices
+      const oldStartVertex = oldPoints[wallIndex];
+      const oldEndVertex = oldPoints[(wallIndex + 1) % oldPoints.length];
+      console.log("Old wall vertices:", { oldStartVertex, oldEndVertex });
       
       // Get new wall vertices
       const newStartVertex = newPoints[wallIndex];
       const newEndVertex = newPoints[(wallIndex + 1) % newPoints.length];
+      console.log("New wall vertices:", { newStartVertex, newEndVertex });
       
       // Calculate new wall vector
       const newWallDx = newEndVertex.x - newStartVertex.x;
@@ -3460,7 +3524,90 @@ const fallbackCopyTextToClipboard = (text: string) => {
       const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
       
       // Skip if wall has zero length
-      if (newWallLength === 0) return window;
+      if (newWallLength === 0) {
+        console.log(`Door ${i} wall has zero length, skipping update`);
+        return door;
+      }
+      
+      console.log(`Door ${i} - Wall length:`, newWallLength);
+      
+      // Calculate normalized direction vector for the new wall
+      const newDirX = newWallDx / newWallLength;
+      const newDirY = newWallDy / newWallLength;
+      
+      // Keep door position (distance from wall start) constant
+      const position = door.position; // This is already the absolute distance
+      
+      // Calculate new start point - absolute distance from wall start
+      const newStartPoint = {
+        x: newStartVertex.x + newDirX * position,
+        y: newStartVertex.y + newDirY * position
+      };
+      
+      // Calculate new end point - keeping the absolute width
+      const newEndPoint = {
+        x: newStartPoint.x + newDirX * door.width,
+        y: newStartPoint.y + newDirY * door.width
+      };
+      
+      // Check if the door now extends beyond the wall
+      if (position + door.width > newWallLength) {
+        console.log(`Door ${i} extends beyond wall, adjusting...`);
+        // Adjust to fit within the wall
+        const adjustedDoor = {
+          ...door,
+          position: Math.max(0, newWallLength - door.width),
+          startPoint: {
+            x: newStartVertex.x + newDirX * Math.max(0, newWallLength - door.width),
+            y: newStartVertex.y + newDirY * Math.max(0, newWallLength - door.width)
+          },
+          endPoint: {
+            x: newEndVertex.x,
+            y: newEndVertex.y
+          }
+        };
+        console.log(`Adjusted door ${i}:`, adjustedDoor);
+        return adjustedDoor;
+      }
+      
+      const updatedDoor = {
+        ...door,
+        startPoint: newStartPoint,
+        endPoint: newEndPoint
+      };
+      console.log(`Updated door ${i}:`, updatedDoor);
+      return updatedDoor;
+    });
+    
+    // Update windows - using the same approach
+    console.log("Updating windows for room:", room.id);
+    const updatedWindows = room.windows.map((window, i) => {
+      console.log(`Processing window ${i}:`, window);
+      const wallIndex = window.wallIndex;
+      
+      // Skip windows that aren't on walls that exist
+      if (wallIndex >= oldPoints.length || wallIndex >= newPoints.length) {
+        console.log(`Window ${i} has invalid wallIndex ${wallIndex}, skipping`);
+        return window;
+      }
+      
+      // Get new wall vertices
+      const newStartVertex = newPoints[wallIndex];
+      const newEndVertex = newPoints[(wallIndex + 1) % newPoints.length];
+      console.log("New wall vertices for window:", { newStartVertex, newEndVertex });
+      
+      // Calculate new wall vector
+      const newWallDx = newEndVertex.x - newStartVertex.x;
+      const newWallDy = newEndVertex.y - newStartVertex.y;
+      const newWallLength = Math.sqrt(newWallDx * newWallDx + newWallDy * newWallDy);
+      
+      // Skip if wall has zero length
+      if (newWallLength === 0) {
+        console.log(`Window ${i} wall has zero length, skipping update`);
+        return window;
+      }
+      
+      console.log(`Window ${i} - Wall length:`, newWallLength);
       
       // Get the normalized direction vector of the new wall
       const newDirX = newWallDx / newWallLength;
@@ -3483,8 +3630,9 @@ const fallbackCopyTextToClipboard = (text: string) => {
       
       // Check if the window now extends beyond the wall
       if (position + window.width > newWallLength) {
+        console.log(`Window ${i} extends beyond wall, adjusting...`);
         // Adjust to fit within the wall
-        return {
+        const adjustedWindow = {
           ...window,
           position: Math.max(0, newWallLength - window.width),
           startPoint: {
@@ -3496,14 +3644,22 @@ const fallbackCopyTextToClipboard = (text: string) => {
             y: newEndVertex.y
           }
         };
+        console.log(`Adjusted window ${i}:`, adjustedWindow);
+        return adjustedWindow;
       }
       
-      return {
-        ...window, // This preserves the type property
+      const updatedWindow = {
+        ...window,
         startPoint: newStartPoint,
         endPoint: newEndPoint
       };
+      console.log(`Updated window ${i}:`, updatedWindow);
+      return updatedWindow;
     });
+    
+    console.log("Updated doors count:", updatedDoors.length);
+    console.log("Updated windows count:", updatedWindows.length);
+    console.log("========== GET UPDATED DOORS AND WINDOWS END ==========");
     
     return {
       doors: updatedDoors,
