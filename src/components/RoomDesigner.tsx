@@ -92,6 +92,7 @@ interface CabinetRun {
     snappedToWall?: {
       roomId: string;
       wallIndex: number;
+      distanceFromStart?: number;
     };
   };
 }
@@ -125,6 +126,7 @@ interface RunSnapSettings {
   threshold: number; // Distance threshold for snapping in mm
   rotationSnap: number; // Snap rotation to multiples of this value (e.g., 90 for 90-degree increments)
 }
+
 
 // For handling run editing UI state
 interface RunEditingState {
@@ -1911,7 +1913,7 @@ const calculateWallAlignment = (
   };
   
   // Find the best wall to snap a run to
-  const findBestWallSnapForRun = (run: CabinetRun): RunSnapResult => {
+  const findBestWallSnapForRun = (run) => {
     if (!rooms.some(r => r.isComplete)) {
       return { shouldSnap: false };
     }
@@ -1923,7 +1925,7 @@ const calculateWallAlignment = (
     let bestSnap = {
       shouldSnap: false,
       snapDistance: SNAP_DISTANCE_MM / scale,
-      snapEdge: 'rear' as 'rear' | undefined,
+      snapEdge: 'rear',
       snapWall: { roomId: '', wallIndex: -1 },
       newX: run.start_pos_x,
       newY: run.start_pos_y,
@@ -1976,13 +1978,35 @@ const calculateWallAlignment = (
             y: newY + (run.length / 2) * Math.sin(rotationRad) - run.depth * Math.cos(rotationRad)
           };
           
+          // Calculate wall vector
+          const wallVector = {
+            x: wallEnd.x - wallStart.x,
+            y: wallEnd.y - wallStart.y
+          };
+          const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
+          
+          // Calculate distance from wall start to the REAR-LEFT corner of the cabinet
+          // Instead of center point, use the actual start_pos which is the rear-left corner
+          const rearLeftToWallStart = {
+            x: newX - wallStart.x,
+            y: newY - wallStart.y
+          };
+          
+          // Project this vector onto the wall direction
+          const dotProduct = rearLeftToWallStart.x * wallVector.x + rearLeftToWallStart.y * wallVector.y;
+          const distanceFromStart = Math.max(0, Math.min(wallLength, dotProduct / wallLength));
+          
           // Only snap if the front of the cabinet would be inside the room
           if (isOnInteriorSideOfWall(frontCenterPoint, wallStart, wallEnd, room.id)) {
             bestSnap = {
               shouldSnap: true,
               snapDistance: distance,
               snapEdge: 'rear',
-              snapWall: { roomId: room.id, wallIndex },
+              snapWall: { 
+                roomId: room.id, 
+                wallIndex,
+                distanceFromStart
+              },
               newX: newX,
               newY: newY,
               newRotation
@@ -2012,7 +2036,7 @@ const calculateWallAlignment = (
       // Skip runs that aren't snapped to any wall
       if (!run.snapInfo?.isSnapped || !run.snapInfo.snappedToWall) continue;
       
-      const { roomId, wallIndex } = run.snapInfo.snappedToWall;
+      const { roomId, wallIndex, distanceFromStart } = run.snapInfo.snappedToWall;
       const room = rooms.find(r => r.id === roomId);
       
       // Skip if the referenced room or wall doesn't exist
@@ -2035,29 +2059,37 @@ const calculateWallAlignment = (
         wallStart, wallEnd, roomId
       );
       
-      // Calculate the run's rear edge midpoint position
-      const corners = calculateRunCorners(run);
-      const rearEdgeMidpoint = {
-        x: (corners.rearLeft.x + corners.rearRight.x) / 2,
-        y: (corners.rearLeft.y + corners.rearRight.y) / 2
-      };
+      // Use stored distance if available, otherwise calculate from current position
+      let currentDistance = typeof distanceFromStart === 'number' ? distanceFromStart : 0;
       
-      // Find the closest point on the wall to the run's rear edge midpoint
-      const { closestPoint, t } = distancePointToWall(
-        rearEdgeMidpoint, wallStart, wallEnd
-      );
+      // If we don't have a stored distance, calculate it based on rear-left corner
+      if (typeof distanceFromStart !== 'number') {
+        // Calculate vector from wall start to rear-left corner
+        const rearLeftToWallStart = {
+          x: run.start_pos_x - wallStart.x,
+          y: run.start_pos_y - wallStart.y
+        };
+        
+        const wallVector = {
+          x: wallEnd.x - wallStart.x,
+          y: wallEnd.y - wallStart.y
+        };
+        
+        // Calculate projection and normalize by wall length
+        const dotProduct = rearLeftToWallStart.x * wallVector.x + rearLeftToWallStart.y * wallVector.y;
+        currentDistance = Math.max(0, Math.min(wallLength, dotProduct / wallLength));
+      }
       
-      // Calculate how much we need to move to keep the run aligned
-      const dx = closestPoint.x - rearEdgeMidpoint.x;
-      const dy = closestPoint.y - rearEdgeMidpoint.y;
+      // Ensure the distance is within the wall bounds
+      currentDistance = Math.max(0, Math.min(wallLength, currentDistance));
       
-      // Calculate new position for the run's rear-left corner
-      const rotationRad = (newRotation * Math.PI) / 180;
-      const runLengthHalf = run.length / 2;
+      // Calculate the position along the wall based on distance
+      const normalizedDirX = wallDx / wallLength;
+      const normalizedDirY = wallDy / wallLength;
       
-      // Adjust for the run's rotation and length to get the rear-left corner
-      const newX = closestPoint.x - Math.cos(rotationRad) * runLengthHalf;
-      const newY = closestPoint.y - Math.sin(rotationRad) * runLengthHalf;
+      // Calculate new position directly at the specified distance from wall start
+      const newX = wallStart.x + normalizedDirX * currentDistance;
+      const newY = wallStart.y + normalizedDirY * currentDistance;
       
       // Only update if position or rotation has changed significantly
       if (
@@ -2068,6 +2100,13 @@ const calculateWallAlignment = (
         updatedRuns[i].start_pos_x = newX;
         updatedRuns[i].start_pos_y = newY;
         updatedRuns[i].rotation_z = newRotation;
+        
+        // Store the updated distance
+        if (!updatedRuns[i].snapInfo.snappedToWall.distanceFromStart || 
+            Math.abs(updatedRuns[i].snapInfo.snappedToWall.distanceFromStart - currentDistance) > 0.1) {
+          updatedRuns[i].snapInfo.snappedToWall.distanceFromStart = currentDistance;
+        }
+        
         hasUpdates = true;
       }
     }
@@ -2076,6 +2115,65 @@ const calculateWallAlignment = (
     if (hasUpdates) {
       setCabinetRuns(updatedRuns);
     }
+  };
+
+  const updateRunDistanceFromWallStart = (runId, newDistance) => {
+    setCabinetRuns(prevRuns => prevRuns.map(run => {
+      if (run.id !== runId) return run;
+      
+      // Only update if run is snapped to a wall
+      if (!run.snapInfo?.isSnapped || !run.snapInfo.snappedToWall) return run;
+      
+      const { roomId, wallIndex } = run.snapInfo.snappedToWall;
+      const room = rooms.find(r => r.id === roomId);
+      
+      // Skip if the referenced room or wall doesn't exist
+      if (!room || wallIndex >= room.points.length) return run;
+      
+      // Get the wall points
+      const wallStart = room.points[wallIndex];
+      const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+      
+      // Calculate the wall vector
+      const wallDx = wallEnd.x - wallStart.x;
+      const wallDy = wallEnd.y - wallStart.y;
+      const wallLength = Math.sqrt(wallDx * wallDx + wallDy * wallDy);
+      
+      // Skip if wall length is zero
+      if (wallLength === 0) return run;
+      
+      // Normalize the wall direction vector
+      const dirX = wallDx / wallLength;
+      const dirY = wallDy / wallLength;
+      
+      // Calculate the optimal rotation to align with the wall
+      const newRotation = calculateWallAlignment(
+        wallStart, wallEnd, roomId
+      );
+      
+      // Calculate the new position based on distance from wall start
+      // Clamp distance to wall length
+      const clampedDistance = Math.max(0, Math.min(wallLength, newDistance));
+      
+      // Directly calculate rear-left corner position based on distance along wall
+      // This is exactly at the specified distance from wall start
+      const newX = wallStart.x + dirX * clampedDistance;
+      const newY = wallStart.y + dirY * clampedDistance;
+      
+      return {
+        ...run,
+        start_pos_x: newX,
+        start_pos_y: newY,
+        rotation_z: newRotation,
+        snapInfo: {
+          ...run.snapInfo,
+          snappedToWall: {
+            ...run.snapInfo.snappedToWall,
+            distanceFromStart: clampedDistance
+          }
+        }
+      };
+    }));
   };
 
   // Calculate centroid of a polygon
@@ -4251,13 +4349,17 @@ const handleCanvasMouseUp = () => {
           r.id === draggedRun.id 
             ? {
                 ...r,
-                start_pos_x: snapResult.newX!,
-                start_pos_y: snapResult.newY!,
+                start_pos_x: snapResult.newX,
+                start_pos_y: snapResult.newY,
                 rotation_z: snapResult.newRotation !== undefined ? snapResult.newRotation : r.rotation_z,
                 snapInfo: {
                   isSnapped: true,
                   snappedEdge: 'rear',
-                  snappedToWall: snapResult.snapWall
+                  snappedToWall: {
+                    roomId: snapResult.snapWall.roomId,
+                    wallIndex: snapResult.snapWall.wallIndex,
+                    distanceFromStart: snapResult.snapWall.distanceFromStart
+                  }
                 }
               }
             : r
@@ -6673,7 +6775,9 @@ const startAddingSecondaryRoom = () => {
                         type="number"
                         value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_x || 0)}
                         onChange={(e) => updateRunProperty(selectedRun, 'start_pos_x', Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
+                        disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
+                        title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Position is determined by wall snap" : ""}
                       />
                     </td>
                   </tr>
@@ -6686,10 +6790,63 @@ const startAddingSecondaryRoom = () => {
                         type="number"
                         value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_y || 0)}
                         onChange={(e) => updateRunProperty(selectedRun, 'start_pos_y', Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
+                        disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
+                        title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Position is determined by wall snap" : ""}
                       />
                     </td>
                   </tr>
+                  {/* Rotation property */}
+                  <tr>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Rotation (°)
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
+                        onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
+                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
+                        disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
+                        title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Rotation is determined by wall snap" : ""}
+                      />
+                      {!cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped && (
+                        <>
+                          <button 
+                            onClick={() => rotateRun(selectedRun, -90)}
+                            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                            title="Rotate 90° Counter-Clockwise"
+                          >
+                            -90°
+                          </button>
+                          <button 
+                            onClick={() => rotateRun(selectedRun, 90)}
+                            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                            title="Rotate 90° Clockwise"
+                          >
+                            +90°
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                  {/* Add distance from wall start input when snapped */}
+                  {cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped && (
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Distance From Wall Start (mm)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="number"
+                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.snappedToWall?.distanceFromStart || 0)}
+                          onChange={(e) => updateRunDistanceFromWallStart(selectedRun, Number(e.target.value))}
+                          className="w-24 px-2 py-1 border border-gray-300 rounded"
+                          min={0}
+                        />
+                      </td>
+                    </tr>
+                  )}
                   
                   {/* Dimension properties */}
                   <tr>
@@ -6730,35 +6887,6 @@ const startAddingSecondaryRoom = () => {
                           <span className="text-sm text-gray-700">Custom depth</span>
                         </label>
                       </div>
-                    </td>
-                  </tr>
-                  
-                  {/* Rotation property */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Rotation (°)
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
-                        onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                      <button 
-                        onClick={() => rotateRun(selectedRun, -90)}
-                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                        title="Rotate 90° Counter-Clockwise"
-                      >
-                        -90°
-                      </button>
-                      <button 
-                        onClick={() => rotateRun(selectedRun, 90)}
-                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                        title="Rotate 90° Clockwise"
-                      >
-                        +90°
-                      </button>
                     </td>
                   </tr>
                   
