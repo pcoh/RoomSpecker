@@ -1258,13 +1258,29 @@ const RoomDesigner: React.FC = () => {
   };
   
   const placeCamera = (position: Point) => {
-    setCamera({
+    const newCamera = {
       position,
       rotation: 0,
       isDragging: false,
       isRotating: false
-    });
+    };
+    
+    // Update the camera state
+    setCamera(newCamera);
     setIsAddingCamera(false);
+    
+    // Force immediate redraw by directly manipulating the canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Draw everything first
+        drawRoom();
+        
+        // Then explicitly draw the camera again to ensure it appears
+        drawCamera(ctx, newCamera);
+      }
+    }
   };
   
   const updateCameraPosition = (position: Point) => {
@@ -1273,6 +1289,8 @@ const RoomDesigner: React.FC = () => {
         ...camera,
         position
       });
+      // Trigger a redraw immediately after state update
+      setTimeout(drawRoom, 0);
     }
   };
   
@@ -1284,6 +1302,8 @@ const RoomDesigner: React.FC = () => {
         ...camera,
         rotation: normalizedRotation
       });
+      // Trigger a redraw immediately after state update
+      setTimeout(drawRoom, 0);
     }
   };
   
@@ -1309,17 +1329,23 @@ const RoomDesigner: React.FC = () => {
   const isCameraRotationHandle = (mousePos: Point): boolean => {
     if (!camera) return false;
     
-    // Calculate the position of the rotation handle
-    const handleDistance = 60 / scale; // Distance from camera position in mm
+    // Calculate the handle distance - must match the one in drawCamera
+    const handleDistance = 470; // In world units
+    
+    // Calculate rotation handle position in world coordinates
     const handlePos = calculateRotationHandlePosition(camera.position, camera.rotation, handleDistance);
     
+    // Calculate distance between mouse position and handle
     const distance = Math.sqrt(
       Math.pow(mousePos.x - handlePos.x, 2) +
       Math.pow(mousePos.y - handlePos.y, 2)
     );
     
-    return distance < POINT_RADIUS * 1.5 / scale;
-  };
+    // Use a fixed detection radius measured in world units
+    // This value needs to be appropriate for the world coordinate system
+    // Adjust this value based on testing
+    return distance < 30; // Fixed radius in world units
+  }
 
   
   const handleForceUpdateSecondaryRooms = () => {
@@ -3535,7 +3561,7 @@ const fallbackCopyTextToClipboard = (text: string) => {
     if (!activeRoom) return;
     
     const mousePos = getMousePosition(e);
-
+  
     // Check for camera handles first
     if (camera) {
       if (isCameraPositionHandle(mousePos)) {
@@ -3559,11 +3585,30 @@ const fallbackCopyTextToClipboard = (text: string) => {
       }
     }
   
-  // Handle different modes in separate functions
-  if (isAddingCamera) {
-    placeCamera(mousePos);
-    return;
-  }
+    // Handle camera placement as top priority
+    if (isAddingCamera) {
+      const newCamera = {
+        position: mousePos,
+        rotation: 0,
+        isDragging: false,
+        isRotating: false
+      };
+      
+      setCamera(newCamera);
+      setIsAddingCamera(false);
+      
+      // Force immediate redraw with the new camera
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          drawRoom();
+        }
+      }
+      
+      e.stopPropagation();
+      return;
+    }
     
     // Handle different modes in separate functions
     if (isAddingRun) {
@@ -3627,6 +3672,12 @@ const fallbackCopyTextToClipboard = (text: string) => {
         initialRotation: run.rotation_z
       });
       setIsDragging(true);
+      
+      // Change cursor to grabbing while dragging
+      const canvas = canvasRef.current;
+      if (canvas) {
+        canvas.style.cursor = 'grabbing';
+      }
     }
   };
   
@@ -4032,18 +4083,19 @@ const fallbackCopyTextToClipboard = (text: string) => {
   };
 
   // New helper function to handle run hovering
-const handleRunHovering = (mousePos) => {
-  const runId = findRunAtPosition(mousePos);
-  if (runId !== hoverRun) {
-    setHoverRun(runId);
-    
-    // Change cursor style
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.style.cursor = runId ? 'move' : 'crosshair';
+  const handleRunHovering = (mousePos) => {
+    const runId = findRunAtPosition(mousePos);
+    if (runId !== hoverRun) {
+      setHoverRun(runId);
+      
+      // Change cursor style
+      const canvas = canvasRef.current;
+      if (canvas) {
+        // Change to "grab" when hovering over a run to indicate it can be dragged
+        canvas.style.cursor = runId ? 'grab' : 'move';
+      }
     }
-  }
-};
+  };
 
 // New helper function to handle run dragging
 const handleRunDragging = (mousePos) => {
@@ -4354,10 +4406,17 @@ const handlePanning = (e) => {
 // Refactored main handleCanvasMouseMove function that calls the appropriate helper
 const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
   const mousePos = getMousePosition(e);
+  const canvas = canvasRef.current;
+  
+  // Default cursor style
+  if (canvas) {
+    canvas.style.cursor = 'crosshair';
+  }
 
   // Handle camera dragging
   if (camera?.isDragging) {
     updateCameraPosition(mousePos);
+    if (canvas) canvas.style.cursor = 'move';
     return;
   }
   
@@ -4369,31 +4428,71 @@ const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
     
     updateCameraRotation(angle);
+    if (canvas) canvas.style.cursor = 'grabbing';
+    return;
+  }
+  
+  // Check if mouse is over camera position handle
+  if (camera && isCameraPositionHandle(mousePos)) {
+    if (canvas) canvas.style.cursor = 'move';
+    return;
+  }
+  
+  // Check if mouse is over camera rotation handle
+  if (camera && isCameraRotationHandle(mousePos)) {
+    if (canvas) canvas.style.cursor = 'grab';
+    return;
+  }
+  
+  // Check for hover over points
+  const nearestPoint = findNearestPoint(mousePos);
+  if (nearestPoint && !isDragging && !isPanning) {
+    if (canvas) canvas.style.cursor = 'pointer';
+    return;
+  }
+  
+  // Check for hover over door points
+  const doorPoint = findNearestDoorPoint(mousePos);
+  if (doorPoint && !isDragging && !isPanning) {
+    if (canvas) canvas.style.cursor = 'pointer';
+    return;
+  }
+  
+  // Check for hover over window points
+  const windowPoint = findNearestWindowPoint(mousePos);
+  if (windowPoint && !isDragging && !isPanning) {
+    if (canvas) canvas.style.cursor = 'pointer';
     return;
   }
   
   // Check for hover over runs when not dragging
   if (!isDragging && !isPanning) {
     handleRunHovering(mousePos);
+    // Run hover cursor is already set in handleRunHovering
   }
   
   if (isDragging) {
     // Handle dragging cabinet runs
     if (draggedRun) {
       handleRunDragging(mousePos);
+      if (canvas) canvas.style.cursor = 'grabbing';
       return;
     }
     
     // Handle dragging points
     if (selectedPoint) {
       handlePointDragging(mousePos);
+      if (canvas) canvas.style.cursor = 'grabbing';
     } else if (selectedWindowPoint) {
       handleWindowPointDragging(mousePos);
+      if (canvas) canvas.style.cursor = 'grabbing';
     } else if (selectedDoorPoint) {
       handleDoorPointDragging(mousePos);
+      if (canvas) canvas.style.cursor = 'grabbing';
     }
   } else if (isPanning) {
     handlePanning(e);
+    if (canvas) canvas.style.cursor = 'grabbing';
   }
 };
 
@@ -4603,9 +4702,25 @@ const handleCanvasMouseUp = () => {
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
-  
+
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // Handle camera placement first, before any other click handling
+    if (isAddingCamera) {
+      const mousePos = getMousePosition(e);
+      setCamera({
+        position: mousePos,
+        rotation: 0,
+        isDragging: false,
+        isRotating: false
+      });
+      setIsAddingCamera(false);
+      
+      // Force redraw right away 
+      drawRoom();
+      return; // Exit early to avoid processing other click behavior
+    }
   
     let mousePos = getMousePosition(e);
   
@@ -5453,52 +5568,49 @@ const startAddingSecondaryRoom = () => {
     ctx.lineWidth = 1;
     ctx.stroke();
     
-    // Draw camera direction indicator
-    const handleDistance = 60 * scale; // Distance from camera in screen pixels
-    const directionX = screenPos.x + Math.cos(camera.rotation * Math.PI / 180) * handleDistance;
-    const directionY = screenPos.y + Math.sin(camera.rotation * Math.PI / 180) * handleDistance;
+    // Calculate the handle distance - in world coordinates
+    const handleDistance = 500; // Distance from camera to rotation handle
+    
+    // Calculate rotation handle position in world coordinates
+    const rotationHandlePos = calculateRotationHandlePosition(camera.position, camera.rotation, handleDistance);
+    
+    // Convert rotation handle position to screen coordinates
+    const rotationHandleScreen = worldToScreen(rotationHandlePos.x, rotationHandlePos.y);
     
     // Draw line from camera to rotation handle
     ctx.beginPath();
     ctx.moveTo(screenPos.x, screenPos.y);
-    ctx.lineTo(directionX, directionY);
+    ctx.lineTo(rotationHandleScreen.x, rotationHandleScreen.y);
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2;
     ctx.stroke();
     
-    // Draw rotation handle
-    ctx.beginPath();
-    ctx.arc(directionX, directionY, POINT_RADIUS, 0, Math.PI * 2);
-    ctx.fillStyle = camera.isRotating ? '#dc2626' : '#10b981';
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    // Draw camera view frustum
-    const frustumWidth = 40 * scale;
-    const frustumLength = 100 * scale;
+    // Use a fixed screen size for the frustum that doesn't depend on scale
+    // This ensures consistent size regardless of zoom level
+    const frustumWidth = 30; // Fixed screen pixels, not world units
     const frustumAngle = 30; // Degrees
     
-    // Calculate left and right frustum edges
-    const leftEdgeAngle = (camera.rotation - frustumAngle / 2) * Math.PI / 180;
-    const rightEdgeAngle = (camera.rotation + frustumAngle / 2) * Math.PI / 180;
+    // Calculate opposite direction (toward camera) by adding 180° to the camera rotation
+    const oppositeRotationRad = ((-camera.rotation + 180) * Math.PI) / 180;
+    const leftEdgeAngle = oppositeRotationRad - (frustumAngle / 2) * Math.PI / 180;
+    const rightEdgeAngle = oppositeRotationRad + (frustumAngle / 2) * Math.PI / 180;
     
-    const leftX = screenPos.x + Math.cos(leftEdgeAngle) * frustumLength;
-    const leftY = screenPos.y + Math.sin(leftEdgeAngle) * frustumLength;
+    // Calculate frustum points (pointing toward camera) in screen coordinates
+    const leftX = rotationHandleScreen.x + Math.cos(leftEdgeAngle) * frustumWidth;
+    const leftY = rotationHandleScreen.y + Math.sin(leftEdgeAngle) * frustumWidth;
     
-    const rightX = screenPos.x + Math.cos(rightEdgeAngle) * frustumLength;
-    const rightY = screenPos.y + Math.sin(rightEdgeAngle) * frustumLength;
+    const rightX = rotationHandleScreen.x + Math.cos(rightEdgeAngle) * frustumWidth;
+    const rightY = rotationHandleScreen.y + Math.sin(rightEdgeAngle) * frustumWidth;
     
-    // Draw frustum
+    // Draw frustum (triangle) as rotation handle
     ctx.beginPath();
-    ctx.moveTo(screenPos.x, screenPos.y);
+    ctx.moveTo(rotationHandleScreen.x, rotationHandleScreen.y);
     ctx.lineTo(leftX, leftY);
     ctx.lineTo(rightX, rightY);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.2)'; // Transparent blue
+    ctx.fillStyle = camera.isRotating ? 'rgba(220, 38, 38, 0.6)' : 'rgba(59, 130, 246, 0.6)';
     ctx.fill();
-    ctx.strokeStyle = '#3b82f6';
+    ctx.strokeStyle = camera.isRotating ? '#dc2626' : '#3b82f6';
     ctx.lineWidth = 1;
     ctx.stroke();
     
@@ -5508,7 +5620,7 @@ const startAddingSecondaryRoom = () => {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillText('Camera', screenPos.x, screenPos.y - POINT_RADIUS * 2);
-  };
+  }
   
   const drawGrid = (ctx, canvas) => {
     ctx.strokeStyle = '#eee';
@@ -6338,7 +6450,7 @@ const startAddingSecondaryRoom = () => {
         }
       }
     }
-  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun, hoverRun]);
+  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun, hoverRun, camera]);
 
   return (
     <div className="space-y-8">
