@@ -263,6 +263,18 @@ const RoomDesigner: React.FC = () => {
   const False = false;
   const [editingRoomHeights, setEditingRoomHeights] = useState<{ [key: string]: string }>({});
 
+  const [editingWallThickness, setEditingWallThickness] = useState<{ [key: string]: string }>({});
+  const [editingWallMaterial, setEditingWallMaterial] = useState<{ [key: string]: string }>({});
+  const [editingFloorMaterial, setEditingFloorMaterial] = useState<{ [key: string]: string }>({});
+  const [editingCeilingMaterial, setEditingCeilingMaterial] = useState<{ [key: string]: string }>({});
+  const [isAddingCamera, setIsAddingCamera] = useState(false);
+  const [camera, setCamera] = useState<{
+    position: Point;
+    rotation: number;
+    isDragging: boolean;
+    isRotating: boolean;
+  } | null>(null);
+
   const handleRoomHeightChange = (roomId: string, value: string) => {
     setEditingRoomHeights({ ...editingRoomHeights, [roomId]: value });
   };
@@ -278,10 +290,6 @@ const RoomDesigner: React.FC = () => {
     delete newEditingRoomHeights[roomId];
     setEditingRoomHeights(newEditingRoomHeights);
   };
-  const [editingWallThickness, setEditingWallThickness] = useState<{ [key: string]: string }>({});
-  const [editingWallMaterial, setEditingWallMaterial] = useState<{ [key: string]: string }>({});
-  const [editingFloorMaterial, setEditingFloorMaterial] = useState<{ [key: string]: string }>({});
-  const [editingCeilingMaterial, setEditingCeilingMaterial] = useState<{ [key: string]: string }>({});
   
 
 
@@ -1238,6 +1246,79 @@ const RoomDesigner: React.FC = () => {
     
     // After updating any point, update attached points from other rooms
     setTimeout(updateAttachedPoints, 0);
+  };
+
+  const startAddingCamera = () => {
+    if (!rooms.some(room => room.isMain && room.isComplete)) {
+      alert('Please complete the main room first');
+      return;
+    }
+    
+    setIsAddingCamera(true);
+  };
+  
+  const placeCamera = (position: Point) => {
+    setCamera({
+      position,
+      rotation: 0,
+      isDragging: false,
+      isRotating: false
+    });
+    setIsAddingCamera(false);
+  };
+  
+  const updateCameraPosition = (position: Point) => {
+    if (camera) {
+      setCamera({
+        ...camera,
+        position
+      });
+    }
+  };
+  
+  const updateCameraRotation = (rotation: number) => {
+    if (camera) {
+      // Normalize rotation to be between 0 and 360 degrees
+      const normalizedRotation = ((rotation % 360) + 360) % 360;
+      setCamera({
+        ...camera,
+        rotation: normalizedRotation
+      });
+    }
+  };
+  
+  const calculateRotationHandlePosition = (position: Point, rotation: number, distance: number): Point => {
+    const rotationRad = (rotation * Math.PI) / 180;
+    return {
+      x: position.x + Math.cos(rotationRad) * distance,
+      y: position.y + Math.sin(rotationRad) * distance
+    };
+  };
+  
+  const isCameraPositionHandle = (mousePos: Point): boolean => {
+    if (!camera) return false;
+    
+    const distance = Math.sqrt(
+      Math.pow(mousePos.x - camera.position.x, 2) +
+      Math.pow(mousePos.y - camera.position.y, 2)
+    );
+    
+    return distance < POINT_RADIUS * 2 / scale;
+  };
+  
+  const isCameraRotationHandle = (mousePos: Point): boolean => {
+    if (!camera) return false;
+    
+    // Calculate the position of the rotation handle
+    const handleDistance = 60 / scale; // Distance from camera position in mm
+    const handlePos = calculateRotationHandlePosition(camera.position, camera.rotation, handleDistance);
+    
+    const distance = Math.sqrt(
+      Math.pow(mousePos.x - handlePos.x, 2) +
+      Math.pow(mousePos.y - handlePos.y, 2)
+    );
+    
+    return distance < POINT_RADIUS * 1.5 / scale;
   };
 
   
@@ -3454,6 +3535,35 @@ const fallbackCopyTextToClipboard = (text: string) => {
     if (!activeRoom) return;
     
     const mousePos = getMousePosition(e);
+
+    // Check for camera handles first
+    if (camera) {
+      if (isCameraPositionHandle(mousePos)) {
+        setCamera({
+          ...camera,
+          isDragging: true,
+          isRotating: false
+        });
+        e.stopPropagation();
+        return;
+      }
+      
+      if (isCameraRotationHandle(mousePos)) {
+        setCamera({
+          ...camera,
+          isDragging: false,
+          isRotating: true
+        });
+        e.stopPropagation();
+        return;
+      }
+    }
+  
+  // Handle different modes in separate functions
+  if (isAddingCamera) {
+    placeCamera(mousePos);
+    return;
+  }
     
     // Handle different modes in separate functions
     if (isAddingRun) {
@@ -4244,6 +4354,23 @@ const handlePanning = (e) => {
 // Refactored main handleCanvasMouseMove function that calls the appropriate helper
 const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
   const mousePos = getMousePosition(e);
+
+  // Handle camera dragging
+  if (camera?.isDragging) {
+    updateCameraPosition(mousePos);
+    return;
+  }
+  
+  // Handle camera rotation
+  if (camera?.isRotating) {
+    // Calculate angle between camera position and mouse position
+    const dx = mousePos.x - camera.position.x;
+    const dy = mousePos.y - camera.position.y;
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    
+    updateCameraRotation(angle);
+    return;
+  }
   
   // Check for hover over runs when not dragging
   if (!isDragging && !isPanning) {
@@ -4414,6 +4541,16 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
 };
   
 const handleCanvasMouseUp = () => {
+  // Reset camera dragging state if needed
+  if (camera?.isDragging || camera?.isRotating) {
+    setCamera({
+      ...camera,
+      isDragging: false,
+      isRotating: false
+    });
+    return;
+  }
+
   // If we were dragging a run, check for snapping when the drag ends
   if (draggedRun) {
     const run = cabinetRuns.find(r => r.id === draggedRun.id);
@@ -5296,6 +5433,81 @@ const startAddingSecondaryRoom = () => {
     drawGrid(ctx, canvas);
     drawRooms(ctx);
     drawCabinetRuns(ctx, canvas);
+    
+    // Draw camera if it exists
+    if (camera) {
+      drawCamera(ctx, camera);
+    }
+  };
+  
+  const drawCamera = (ctx: CanvasRenderingContext2D, camera: { position: Point; rotation: number; isDragging: boolean; isRotating: boolean }) => {
+    // Convert camera position to screen coordinates
+    const screenPos = worldToScreen(camera.position.x, camera.position.y);
+    
+    // Draw camera body
+    ctx.beginPath();
+    ctx.arc(screenPos.x, screenPos.y, POINT_RADIUS * 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = camera.isDragging ? '#dc2626' : '#3b82f6';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Draw camera direction indicator
+    const handleDistance = 60 * scale; // Distance from camera in screen pixels
+    const directionX = screenPos.x + Math.cos(camera.rotation * Math.PI / 180) * handleDistance;
+    const directionY = screenPos.y + Math.sin(camera.rotation * Math.PI / 180) * handleDistance;
+    
+    // Draw line from camera to rotation handle
+    ctx.beginPath();
+    ctx.moveTo(screenPos.x, screenPos.y);
+    ctx.lineTo(directionX, directionY);
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Draw rotation handle
+    ctx.beginPath();
+    ctx.arc(directionX, directionY, POINT_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = camera.isRotating ? '#dc2626' : '#10b981';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Draw camera view frustum
+    const frustumWidth = 40 * scale;
+    const frustumLength = 100 * scale;
+    const frustumAngle = 30; // Degrees
+    
+    // Calculate left and right frustum edges
+    const leftEdgeAngle = (camera.rotation - frustumAngle / 2) * Math.PI / 180;
+    const rightEdgeAngle = (camera.rotation + frustumAngle / 2) * Math.PI / 180;
+    
+    const leftX = screenPos.x + Math.cos(leftEdgeAngle) * frustumLength;
+    const leftY = screenPos.y + Math.sin(leftEdgeAngle) * frustumLength;
+    
+    const rightX = screenPos.x + Math.cos(rightEdgeAngle) * frustumLength;
+    const rightY = screenPos.y + Math.sin(rightEdgeAngle) * frustumLength;
+    
+    // Draw frustum
+    ctx.beginPath();
+    ctx.moveTo(screenPos.x, screenPos.y);
+    ctx.lineTo(leftX, leftY);
+    ctx.lineTo(rightX, rightY);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.2)'; // Transparent blue
+    ctx.fill();
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Draw camera label
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Camera', screenPos.x, screenPos.y - POINT_RADIUS * 2);
   };
   
   const drawGrid = (ctx, canvas) => {
@@ -6169,6 +6381,14 @@ const startAddingSecondaryRoom = () => {
               {isAddingRun ? 'Adding Cabinet Run...' : 'Add Cabinet Run'}
             </button>
             <button
+              onClick={startAddingCamera}
+              disabled={!rooms.some(r => r.isMain && r.isComplete) || isAddingCamera || camera !== null}
+              className="flex items-center gap-2 px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Square size={16} />
+              {isAddingCamera ? 'Placing Camera...' : 'Place Camera'}
+            </button>
+            <button
               onClick={() => {
                 setRooms([]);
                 setActiveRoomId(null);
@@ -6320,7 +6540,7 @@ const startAddingSecondaryRoom = () => {
           className="border border-gray-300 rounded cursor-crosshair"
         />
 
-{contextMenu && (
+      {contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
@@ -7288,6 +7508,90 @@ const startAddingSecondaryRoom = () => {
         ) : (
           <p className="text-gray-500">Select a cabinet run to edit its properties</p>
         )}
+      </div>
+    )}
+
+    {camera && (
+      <div className="bg-white rounded-lg shadow-lg p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Camera Properties</h2>
+          <button
+            onClick={() => setCamera(null)}
+            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Remove Camera
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Property
+                </th>
+                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Value
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  X Position (mm)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <input
+                    type="number"
+                    value={Math.round(camera.position.x)}
+                    onChange={(e) => updateCameraPosition({ x: Number(e.target.value), y: camera.position.y })}
+                    className="w-24 px-2 py-1 border border-gray-300 rounded"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  Y Position (mm)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <input
+                    type="number"
+                    value={Math.round(camera.position.y)}
+                    onChange={(e) => updateCameraPosition({ x: camera.position.x, y: Number(e.target.value) })}
+                    className="w-24 px-2 py-1 border border-gray-300 rounded"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  Rotation (°)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={Math.round(camera.rotation)}
+                    onChange={(e) => updateCameraRotation(Number(e.target.value))}
+                    className="w-24 px-2 py-1 border border-gray-300 rounded"
+                  />
+                  <button 
+                    onClick={() => updateCameraRotation(camera.rotation - 45)}
+                    className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                    title="Rotate 45° Counter-Clockwise"
+                  >
+                    -45°
+                  </button>
+                  <button 
+                    onClick={() => updateCameraRotation(camera.rotation + 45)}
+                    className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                    title="Rotate 45° Clockwise"
+                  >
+                    +45°
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     )}
   </div>
