@@ -3177,8 +3177,8 @@ const updateCabinetProperty = (cabinetId, property, value) => {
 };
 
 
-const exportRoomData = () => {
-  // Create a mapping from existing room IDs to sequential integers
+// Create a mapping from existing room IDs to sequential integers
+const createRoomIdMapping = (rooms) => {
   const roomIdMap = new Map();
   
   // Find the main room and assign it ID 0
@@ -3194,135 +3194,176 @@ const exportRoomData = () => {
       roomIdMap.set(room.id, nextId++);
     }
   });
+  
+  return roomIdMap;
+};
 
-  // Create the export data structure with mapped IDs
+// Generate walls data based on room properties
+const generateWallsData = (room) => {
+  let wallsData = {
+    count: 0,
+    from: [],
+    to: []
+  };
+  
+  if (room.isComplete) {
+    if (room.noClosingWall) {
+      // For rooms with noClosingWall flag, don't include wall connecting last to first point
+      wallsData.count = room.points.length - 1;
+      for (let i = 0; i < room.points.length - 1; i++) {
+        wallsData.from.push(i);
+        wallsData.to.push(i + 1);
+      }
+    } else {
+      // Normal complete rooms include all walls (including one connecting last to first)
+      wallsData.count = room.points.length;
+      for (let i = 0; i < room.points.length; i++) {
+        wallsData.from.push(i);
+        wallsData.to.push((i + 1) % room.points.length);
+      }
+    }
+  }
+  
+  return wallsData;
+};
+
+// Format room data for export
+const formatRoomData = (room, mappedId) => {
+  const wallsData = generateWallsData(room);
+  
+  return {
+    id: mappedId, // Use the mapped integer ID
+    isMain: room.isMain,
+    isComplete: room.isComplete,
+    height: Math.round(room.height), // Include room height in export
+    wall_thickness: Math.round(room.wall_thickness), // Include wall thickness in export
+    wall_material: room.wall_material, // Include wall material in export
+    floor_material: room.floor_material, // Include floor material in export
+    ceiling_material: room.ceiling_material, // Include ceiling material in export
+    points: {
+      x: room.points.map(point => Math.round(point.x)),
+      y: room.points.map(point => Math.round(point.y))
+    },
+    walls: wallsData,
+    doors: {
+      count: room.doors.length,
+      wallIndices: room.doors.map(door => door.wallIndex),
+      widths: room.doors.map(door => Math.round(door.width)),
+      positions: room.doors.map(door => Math.round(door.position)),
+      heights: room.doors.map(door => Math.round(door.height || 2032)), // New property
+      frameThicknesses: room.doors.map(door => Math.round(door.frameThickness || 20)), // New property
+      frameWidths: room.doors.map(door => Math.round(door.frameWidth || 100)), // New property
+      materials: room.doors.map(door => door.material || "WhiteOak_SlipMatch_Vert") // New property
+    },
+    windows: {
+      count: room.windows.length,
+      wallIndices: room.windows.map(window => window.wallIndex),
+      widths: room.windows.map(window => Math.round(window.width)),
+      heights: room.windows.map(window => Math.round(window.height)),
+      sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
+      positions: room.windows.map(window => Math.round(window.position)),
+      types: room.windows.map(window => window.type) // Add window types to export
+    }
+  };
+};
+
+// Format cabinet run data for export
+const formatCabinetRunData = (run, roomIdMap) => {
+  const exportRun = {
+    id: run.id, // Already an integer
+    type: run.type,
+    position: {
+      x: Math.round(run.start_pos_x),
+      y: Math.round(run.start_pos_y)
+    },
+    dimensions: {
+      length: Math.round(run.length),
+      depth: Math.round(run.depth)
+    },
+    rotation_z: Math.round(run.rotation_z),
+    properties: {
+      start_type: run.start_type,
+      end_type: run.end_type,
+      top_filler: run.top_filler,
+      is_island: run.is_island
+    }
+  };
+  
+  // If the run is snapped to a wall, update the room ID reference
+  if (run.snapInfo?.isSnapped && run.snapInfo.snappedToWall) {
+    const originalRoomId = run.snapInfo.snappedToWall.roomId;
+    if (roomIdMap.has(originalRoomId)) {
+      exportRun.snapInfo = {
+        ...run.snapInfo,
+        snappedToWall: {
+          roomId: roomIdMap.get(originalRoomId),
+          wallIndex: run.snapInfo.snappedToWall.wallIndex
+        }
+      };
+    }
+  }
+  
+  return exportRun;
+};
+
+// Format cabinet data for export
+const formatCabinetData = (cabinet) => {
+  const exportCabinet = {
+    id: cabinet.id,
+    cabinet_run_id: cabinet.cabinet_run_id, // Already an integer
+    cabinet_type: cabinet.cabinet_type,
+    cabinet_width: Math.round(cabinet.cabinet_width),
+    hinge_right: cabinet.hinge_right,
+    material_doors: cabinet.material_doors,
+    position: Math.round(cabinet.position)
+  };
+  
+  // Only include floating shelf properties if this is a floating shelf
+  if (cabinet.cabinet_type === 'Wall - Floating Shelf') {
+    exportCabinet.floating_shelf_depth = Math.round(cabinet.floating_shelf_depth || 200);
+    exportCabinet.floating_shelf_height = Math.round(cabinet.floating_shelf_height || 100);
+    exportCabinet.floating_shelf_num = Math.round(cabinet.floating_shelf_num || 1);
+    exportCabinet.floating_shelf_vert_spacing = Math.round(cabinet.floating_shelf_vert_spacing || 350);
+  }
+  
+  return exportCabinet;
+};
+
+// Copy JSON data to clipboard with fallback
+const copyToClipboard = (jsonData) => {
+  try {
+    navigator.clipboard.writeText(jsonData)
+      .then(() => {
+        alert('Room data copied to clipboard!');
+      })
+      .catch(err => {
+        console.error('Failed to copy data: ', err);
+        fallbackCopyTextToClipboard(jsonData);
+      });
+  } catch (err) {
+    console.error('Export failed: ', err);
+    fallbackCopyTextToClipboard(jsonData);
+  }
+};
+
+// The main export function, now using the helper functions
+const exportRoomData = () => {
+  // Step 1: Create room ID mapping
+  const roomIdMap = createRoomIdMapping(rooms);
+
+  // Step 2: Format room data
   const exportData = rooms.map(room => {
     const mappedId = roomIdMap.get(room.id);
-    
-    // Generate walls data based on room properties
-    let wallsData = {
-      count: 0,
-      from: [],
-      to: []
-    };
-    
-    if (room.isComplete) {
-      if (room.noClosingWall) {
-        // For rooms with noClosingWall flag, don't include wall connecting last to first point
-        wallsData.count = room.points.length - 1;
-        for (let i = 0; i < room.points.length - 1; i++) {
-          wallsData.from.push(i);
-          wallsData.to.push(i + 1);
-        }
-      } else {
-        // Normal complete rooms include all walls (including one connecting last to first)
-        wallsData.count = room.points.length;
-        for (let i = 0; i < room.points.length; i++) {
-          wallsData.from.push(i);
-          wallsData.to.push((i + 1) % room.points.length);
-        }
-      }
-    }
-    
-    return {
-      id: mappedId, // Use the mapped integer ID
-      isMain: room.isMain,
-      isComplete: room.isComplete,
-      height: Math.round(room.height), // Include room height in export
-      wall_thickness: Math.round(room.wall_thickness), // Include wall thickness in export
-      wall_material: room.wall_material, // Include wall material in export
-      floor_material: room.floor_material, // Include floor material in export
-      ceiling_material: room.ceiling_material, // Include ceiling material in export
-      points: {
-        x: room.points.map(point => Math.round(point.x)),
-        y: room.points.map(point => Math.round(point.y))
-      },
-      walls: wallsData,
-      doors: {
-        count: room.doors.length,
-        wallIndices: room.doors.map(door => door.wallIndex),
-        widths: room.doors.map(door => Math.round(door.width)),
-        positions: room.doors.map(door => Math.round(door.position)),
-        heights: room.doors.map(door => Math.round(door.height || 2032)), // New property
-        frameThicknesses: room.doors.map(door => Math.round(door.frameThickness || 20)), // New property
-        frameWidths: room.doors.map(door => Math.round(door.frameWidth || 100)), // New property
-        materials: room.doors.map(door => door.material || "WhiteOak_SlipMatch_Vert") // New property
-      },
-      windows: {
-        count: room.windows.length,
-        wallIndices: room.windows.map(window => window.wallIndex),
-        widths: room.windows.map(window => Math.round(window.width)),
-        heights: room.windows.map(window => Math.round(window.height)),
-        sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
-        positions: room.windows.map(window => Math.round(window.position)),
-        types: room.windows.map(window => window.type) // Add window types to export
-      }
-    };
+    return formatRoomData(room, mappedId);
   });
 
-  // Also need to update cabinet run references to rooms
-  const cabinetRunData = cabinetRuns.map(run => {
-    const exportRun = {
-      id: run.id, // Already an integer
-      type: run.type,
-      position: {
-        x: Math.round(run.start_pos_x),
-        y: Math.round(run.start_pos_y)
-      },
-      dimensions: {
-        length: Math.round(run.length),
-        depth: Math.round(run.depth)
-      },
-      rotation_z: Math.round(run.rotation_z),
-      properties: {
-        start_type: run.start_type,
-        end_type: run.end_type,
-        top_filler: run.top_filler,
-        is_island: run.is_island
-      }
-    };
-    
-    // If the run is snapped to a wall, update the room ID reference
-    if (run.snapInfo?.isSnapped && run.snapInfo.snappedToWall) {
-      const originalRoomId = run.snapInfo.snappedToWall.roomId;
-      if (roomIdMap.has(originalRoomId)) {
-        exportRun.snapInfo = {
-          ...run.snapInfo,
-          snappedToWall: {
-            roomId: roomIdMap.get(originalRoomId),
-            wallIndex: run.snapInfo.snappedToWall.wallIndex
-          }
-        };
-      }
-    }
-    
-    return exportRun;
-  });
+  // Step 3: Format cabinet run data
+  const cabinetRunData = cabinetRuns.map(run => formatCabinetRunData(run, roomIdMap));
 
-  // Add cabinet data to the export (with integer cabinet_run_id)
-  const cabinetData = cabinets.map(cabinet => {
-    const exportCabinet = {
-      id: cabinet.id,
-      cabinet_run_id: cabinet.cabinet_run_id, // Already an integer
-      cabinet_type: cabinet.cabinet_type,
-      cabinet_width: Math.round(cabinet.cabinet_width),
-      hinge_right: cabinet.hinge_right,
-      material_doors: cabinet.material_doors,
-      position: Math.round(cabinet.position)
-    };
-    
-    // Only include floating shelf properties if this is a floating shelf
-    if (cabinet.cabinet_type === 'Wall - Floating Shelf') {
-      exportCabinet.floating_shelf_depth = Math.round(cabinet.floating_shelf_depth || 200);
-      exportCabinet.floating_shelf_height = Math.round(cabinet.floating_shelf_height || 100);
-      exportCabinet.floating_shelf_num = Math.round(cabinet.floating_shelf_num || 1);
-      exportCabinet.floating_shelf_vert_spacing = Math.round(cabinet.floating_shelf_vert_spacing || 350);
-    }
-    
-    return exportCabinet;
-  });
+  // Step 4: Format cabinet data
+  const cabinetData = cabinets.map(cabinet => formatCabinetData(cabinet));
 
-  // Additional metadata with cabinet runs and cabinets included
+  // Step 5: Create final export object
   const exportObject = {
     projectData: {
       rooms: exportData,
@@ -3332,33 +3373,12 @@ const exportRoomData = () => {
     }
   };
 
-  // Convert to JSON string
+  // Step 6: Convert to JSON string and replace "true"/"false" with True/False
   let jsonData = JSON.stringify(exportObject, null, 2);
-
-  // Replace "true" and "false" with True and False
   jsonData = jsonData.replace(/true/g, 'True').replace(/false/g, 'False');
   
-  try {
-    navigator.clipboard.writeText(jsonData)
-      .then(() => {
-        alert('Room data copied to clipboard!');
-      })
-      .catch(err => {
-        console.error('Failed to copy data: ', err);
-        alert('Unable to automatically copy. Please use Ctrl+C to copy the data manually.');
-        
-        const textArea = document.createElement('textarea');
-        textArea.value = jsonData;
-        document.body.appendChild(textArea);
-        textArea.select();
-        textArea.setSelectionRange(0, 99999);
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-      });
-  } catch (err) {
-    console.error('Export failed: ', err);
-    alert('Export failed. Please check the console for details.');
-  }
+  // Step 7: Copy to clipboard
+  copyToClipboard(jsonData);
 
   return jsonData;
 };
