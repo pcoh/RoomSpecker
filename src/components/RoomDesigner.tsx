@@ -1289,10 +1289,11 @@ const RoomDesigner: React.FC = () => {
         ...camera,
         position
       });
-      // Trigger a redraw immediately after state update
-      setTimeout(drawRoom, 0);
+      // Force an immediate redraw
+      drawRoom();
     }
   };
+  
   
   const updateCameraRotation = (rotation: number) => {
     if (camera) {
@@ -1303,7 +1304,7 @@ const RoomDesigner: React.FC = () => {
         rotation: normalizedRotation
       });
       // Trigger a redraw immediately after state update
-      setTimeout(drawRoom, 0);
+      drawRoom();
     }
   };
   
