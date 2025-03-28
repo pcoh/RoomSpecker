@@ -273,6 +273,11 @@ const RoomDesigner: React.FC = () => {
     isDragging: boolean;
     isRotating: boolean;
   } | null>(null);
+  const [focalPoint, setFocalPoint] = useState<{
+    position: Point;
+    isDragging: boolean;
+  } | null>(null);
+  const [isAddingFocalPoint, setIsAddingFocalPoint] = useState(false);
   const [projectAddress, setProjectAddress] = useState<string>("");
 
 
@@ -1298,6 +1303,12 @@ const RoomDesigner: React.FC = () => {
       alert('Please complete the main room first');
       return;
     }
+
+    // Add this check to prevent adding a camera if one already exists
+    if (camera !== null) {
+      alert('Camera already exists. You can adjust its properties below.');
+    return;
+  }
     
     setIsAddingCamera(true);
   };
@@ -1393,6 +1404,57 @@ const RoomDesigner: React.FC = () => {
     // Adjust this value based on testing
     return distance < 30; // Fixed radius in world units
   }
+  const startAddingFocalPoint = () => {
+    if (!rooms.some(room => room.isMain && room.isComplete)) {
+      alert('Please complete the main room first');
+      return;
+    }
+
+    // Check if camera exists before allowing focal point placement
+    if (camera === null) {
+      alert('Please place a camera first before adding a focal point');
+      return;
+    }
+
+    // Add this check to prevent adding a focal point if one already exists
+    if (focalPoint !== null) {
+      alert('Focal point already exists. You can adjust its properties below.');
+      return;
+    }
+    
+    setIsAddingFocalPoint(true);
+  };
+  
+  const placeFocalPoint = (position: Point) => {
+    const newFocalPoint = {
+      position,
+      isDragging: false
+    };
+    
+    // Update the focal point state
+    setFocalPoint(newFocalPoint);
+    setIsAddingFocalPoint(false);
+    
+    // Force immediate redraw
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        drawRoom();
+      }
+    }
+  };
+
+  const updateFocalPointPosition = (position: Point) => {
+    if (focalPoint) {
+      setFocalPoint({
+        ...focalPoint,
+        position
+      });
+      // Force an immediate redraw
+      drawRoom();
+    }
+  };
 
   
   const handleForceUpdateSecondaryRooms = () => {
@@ -3514,6 +3576,17 @@ const copyToClipboard = (jsonData) => {
   }
 };
 
+const formatFocalPointData = (focalPoint) => {
+  if (!focalPoint) return null;
+  
+  return {
+    position: {
+      x: Math.round(focalPoint.position.x),
+      y: Math.round(focalPoint.position.y)
+    }
+  };
+};
+
 // The main export function, now using the helper functions
 const exportRoomData = () => {
   // Step 1: Create room ID mapping
@@ -3534,7 +3607,10 @@ const exportRoomData = () => {
   // Step 5: Format camera data (if exists)
   const cameraData = formatCameraData(camera);
 
-  // Step 6: Create final export object
+  // Step 6: Add focal point data to the export object
+  const focalPointData = formatFocalPointData(focalPoint);
+
+  // Step 7: Create final export object
   const exportObject = {
     projectData: {
       address: projectAddress, // Include project address
@@ -3542,6 +3618,7 @@ const exportRoomData = () => {
       cabinetRuns: cabinetRunData,
       cabinets: cabinetData,
       camera: cameraData, // Add camera data to export
+      focalPoint: focalPointData, 
       exportDate: new Date().toISOString()
     }
   };
@@ -3628,7 +3705,26 @@ const fallbackCopyTextToClipboard = (text: string) => {
     
     const mousePos = getMousePosition(e);
   
-    // Check for camera handles first
+    // Check for focal point handle first
+    if (focalPoint) {
+      if (isFocalPointHandle(mousePos)) {
+        setFocalPoint({
+          ...focalPoint,
+          isDragging: true
+        });
+        e.stopPropagation();
+        return;
+      }
+    }
+    
+    // Handle focal point placement first
+    if (isAddingFocalPoint) {
+      placeFocalPoint(mousePos);
+      e.stopPropagation();
+      return;
+    }
+
+
     if (camera) {
       if (isCameraPositionHandle(mousePos)) {
         setCamera({
@@ -4479,6 +4575,19 @@ const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     canvas.style.cursor = 'crosshair';
   }
 
+  // Handle focal point dragging
+  if (focalPoint?.isDragging) {
+    updateFocalPointPosition(mousePos);
+    if (canvas) canvas.style.cursor = 'move';
+    return;
+  }
+  
+  // Check if mouse is over focal point handle
+  if (focalPoint && isFocalPointHandle(mousePos)) {
+    if (canvas) canvas.style.cursor = 'move';
+    return;
+  }
+
   // Handle camera dragging
   if (camera?.isDragging) {
     updateCameraPosition(mousePos);
@@ -4706,6 +4815,16 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
 };
   
 const handleCanvasMouseUp = () => {
+  // Reset focal point dragging state if needed
+  if (focalPoint?.isDragging) {
+    setFocalPoint({
+      ...focalPoint,
+      isDragging: false
+    });
+    return;
+  }
+
+
   // Reset camera dragging state if needed
   if (camera?.isDragging || camera?.isRotating) {
     setCamera({
@@ -4772,7 +4891,17 @@ const handleCanvasMouseUp = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Handle camera placement first, before any other click handling
+    // Handle focal point placement first, before any other click handling
+    if (isAddingFocalPoint) {
+      const mousePos = getMousePosition(e);
+      placeFocalPoint(mousePos);
+      
+      drawRoom();
+      return; // Exit early to avoid processing other click behavior
+    }
+
+
+    // Handle camera placement next
     if (isAddingCamera) {
       const mousePos = getMousePosition(e);
       setCamera({
@@ -5619,6 +5748,11 @@ const startAddingSecondaryRoom = () => {
     if (camera) {
       drawCamera(ctx, camera);
     }
+    
+    // Draw focal point if it exists
+    if (focalPoint) {
+      drawFocalPoint(ctx, focalPoint);
+    }
   };
   
   const drawCamera = (ctx: CanvasRenderingContext2D, camera: { position: Point; rotation: number; isDragging: boolean; isRotating: boolean }) => {
@@ -5687,6 +5821,85 @@ const startAddingSecondaryRoom = () => {
     ctx.textBaseline = 'bottom';
     ctx.fillText('Camera', screenPos.x, screenPos.y - POINT_RADIUS * 2);
   }
+
+  const drawFocalPoint = (ctx: CanvasRenderingContext2D, focalPoint: { position: Point; isDragging: boolean }) => {
+    // Convert focal point position to screen coordinates
+    const screenPos = worldToScreen(focalPoint.position.x, focalPoint.position.y);
+    
+    // Set radius for eye symbol
+    const eyeRadius = POINT_RADIUS * 2;
+    
+    // // Draw outer eye shape (ellipse)
+    // ctx.beginPath();
+    // ctx.ellipse(
+    //   screenPos.x, 
+    //   screenPos.y, 
+    //   eyeRadius * 1.5, // width
+    //   eyeRadius, // height
+    //   0, // rotation
+    //   0, 
+    //   Math.PI * 2
+    // );
+    // ctx.fillStyle = focalPoint.isDragging ? 'rgba(220, 38, 38, 0.7)' : 'rgba(255, 255, 255, 0.9)'; // white eye, red when dragging
+    // ctx.fill();
+    // ctx.strokeStyle = '#000';
+    // ctx.lineWidth = 1.5;
+    // ctx.stroke();
+    
+    // Draw iris
+    ctx.beginPath();
+    ctx.arc(
+      screenPos.x, 
+      screenPos.y, 
+      eyeRadius * 0.5, 
+      0, 
+      Math.PI * 2
+    );
+    ctx.fillStyle = focalPoint.isDragging ? '#dc2626' : '#3b82f6'; // blue iris, red when dragging
+    ctx.fill();
+    
+    // Draw pupil
+    ctx.beginPath();
+    ctx.arc(
+      screenPos.x, 
+      screenPos.y, 
+      eyeRadius * 0.25, 
+      0, 
+      Math.PI * 2
+    );
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    
+    // Add highlight
+    ctx.beginPath();
+    ctx.arc(
+      screenPos.x - eyeRadius * 0.15, 
+      screenPos.y - eyeRadius * 0.15, 
+      eyeRadius * 0.1, 
+      0, 
+      Math.PI * 2
+    );
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    
+    // Draw label
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Focal Point', screenPos.x, screenPos.y - eyeRadius*0.8);
+  }
+
+  const isFocalPointHandle = (mousePos: Point): boolean => {
+    if (!focalPoint) return false;
+    
+    const distance = Math.sqrt(
+      Math.pow(mousePos.x - focalPoint.position.x, 2) +
+      Math.pow(mousePos.y - focalPoint.position.y, 2)
+    );
+    
+    return distance < POINT_RADIUS * 2 / scale;
+  };
   
   const drawGrid = (ctx, canvas) => {
     ctx.strokeStyle = '#eee';
@@ -6516,7 +6729,7 @@ const startAddingSecondaryRoom = () => {
         }
       }
     }
-  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun, hoverRun, camera]);
+  }, [rooms, selectedPoint, activeRoomId, pan, scale, selectedDoorPoint, selectedWindowPoint, addingDoor, addingWindow, cabinetRuns, selectedRun, draggedRun, isAddingRun, hoverRun, camera, focalPoint]);
 
   return (
     <div className="space-y-8">
@@ -6567,6 +6780,14 @@ const startAddingSecondaryRoom = () => {
             >
               <Square size={16} />
               {isAddingCamera ? 'Placing Camera...' : 'Place Camera'}
+            </button>
+            <button
+              onClick={startAddingFocalPoint}
+              disabled={!rooms.some(r => r.isMain && r.isComplete) || isAddingFocalPoint || focalPoint !== null || camera === null}
+              className="flex items-center gap-2 px-4 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Square size={16} />
+              {isAddingFocalPoint ? 'Placing Focal Point...' : 'Place Focal Point'}
             </button>
             <button
               onClick={() => {
@@ -7697,12 +7918,12 @@ const startAddingSecondaryRoom = () => {
       <div className="bg-white rounded-lg shadow-lg p-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Camera Properties</h2>
-          <button
+          {/* <button
             onClick={() => setCamera(null)}
             className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
           >
             Remove Camera
-          </button>
+          </button> */}
         </div>
 
         <div className="overflow-x-auto">
@@ -7769,6 +7990,63 @@ const startAddingSecondaryRoom = () => {
                   >
                     +5°
                   </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+
+    {focalPoint && (
+      <div className="bg-white rounded-lg shadow-lg p-4">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">Focal Point Properties</h2>
+          {/* <button
+            onClick={() => setFocalPoint(null)}
+            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Remove Focal Point
+          </button> */}
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Property
+                </th>
+                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Value
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  X Position (mm)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <input
+                    type="number"
+                    value={Math.round(focalPoint.position.x)}
+                    onChange={(e) => updateFocalPointPosition({ x: Number(e.target.value), y: focalPoint.position.y })}
+                    className="w-24 px-2 py-1 border border-gray-300 rounded"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  Y Position (mm)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <input
+                    type="number"
+                    value={Math.round(focalPoint.position.y)}
+                    onChange={(e) => updateFocalPointPosition({ x: focalPoint.position.x, y: Number(e.target.value) })}
+                    className="w-24 px-2 py-1 border border-gray-300 rounded"
+                  />
                 </td>
               </tr>
             </tbody>
