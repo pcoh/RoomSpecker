@@ -1341,10 +1341,27 @@ const RoomDesigner: React.FC = () => {
   
   const updateCameraPosition = (position: Point) => {
     if (camera) {
-      setCamera({
-        ...camera,
-        position
-      });
+      // If focal point exists, calculate rotation to point toward it
+      if (focalPoint) {
+        const dx = focalPoint.position.x - position.x;
+        const dy = focalPoint.position.y - position.y;
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        
+        // Update camera with all required properties
+        setCamera({
+          position: position,
+          rotation: ((angle % 360) + 360) % 360,
+          isDragging: camera.isDragging,
+          isRotating: camera.isRotating
+        });
+      } else {
+        // If no focal point, just update position
+        setCamera({
+          ...camera,
+          position: position
+        });
+      }
+      
       // Force an immediate redraw
       drawRoom();
     }
@@ -1354,12 +1371,31 @@ const RoomDesigner: React.FC = () => {
   
   const updateCameraRotation = (rotation: number) => {
     if (camera) {
-      // Normalize rotation to be between 0 and 360 degrees
-      const normalizedRotation = ((rotation % 360) + 360) % 360;
-      setCamera({
-        ...camera,
-        rotation: normalizedRotation
-      });
+      // Instead of using the provided rotation parameter,
+      // calculate the angle between camera and focal point
+      if (focalPoint) {
+        // Calculate angle between camera position and focal point
+        const dx = focalPoint.position.x - camera.position.x;
+        const dy = focalPoint.position.y - camera.position.y;
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        
+        // Normalize rotation to be between 0 and 360 degrees
+        const normalizedRotation = ((angle % 360) + 360) % 360;
+        
+        setCamera({
+          ...camera,
+          rotation: normalizedRotation
+        });
+      } else {
+        // If no focal point exists, use the provided rotation
+        // Normalize rotation to be between 0 and 360 degrees
+        const normalizedRotation = ((rotation % 360) + 360) % 360;
+        setCamera({
+          ...camera,
+          rotation: normalizedRotation
+        });
+      }
+      
       // Force an immediate redraw
       drawRoom();
     }
@@ -1435,6 +1471,21 @@ const RoomDesigner: React.FC = () => {
     setFocalPoint(newFocalPoint);
     setIsAddingFocalPoint(false);
     
+    // If camera exists, update its rotation to point toward the focal point
+    if (camera) {
+      const dx = position.x - camera.position.x;
+      const dy = position.y - camera.position.y;
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      
+      // Update camera with all required properties
+      setCamera({
+        position: camera.position,
+        rotation: ((angle % 360) + 360) % 360,
+        isDragging: camera.isDragging,
+        isRotating: camera.isRotating
+      });
+    }
+    
     // Force immediate redraw
     const canvas = canvasRef.current;
     if (canvas) {
@@ -1451,6 +1502,22 @@ const RoomDesigner: React.FC = () => {
         ...focalPoint,
         position
       });
+      
+      // Update camera rotation to point toward the new focal point position
+      if (camera) {
+        const dx = position.x - camera.position.x;
+        const dy = position.y - camera.position.y;
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+        
+        // Make sure to include all required properties and their correct types
+        setCamera({
+          position: camera.position, // Explicitly use the camera's existing position
+          rotation: ((angle % 360) + 360) % 360,
+          isDragging: camera.isDragging,
+          isRotating: camera.isRotating
+        });
+      }
+      
       // Force an immediate redraw
       drawRoom();
     }
@@ -7918,12 +7985,6 @@ const startAddingSecondaryRoom = () => {
       <div className="bg-white rounded-lg shadow-lg p-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Camera Properties</h2>
-          {/* <button
-            onClick={() => setCamera(null)}
-            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Remove Camera
-          </button> */}
         </div>
 
         <div className="overflow-x-auto">
@@ -7969,27 +8030,35 @@ const startAddingSecondaryRoom = () => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   Rotation (°)
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={Math.round(camera.rotation)}
-                    onChange={(e) => updateCameraRotation(Number(e.target.value))}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded"
-                  />
-                  <button 
-                    onClick={() => updateCameraRotation(camera.rotation - 5)}
-                    className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                    title="Rotate 5° Counter-Clockwise"
-                  >
-                    -5°
-                  </button>
-                  <button 
-                    onClick={() => updateCameraRotation(camera.rotation + 5)}
-                    className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                    title="Rotate 5° Clockwise"
-                  >
-                    +5°
-                  </button>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {focalPoint ? (
+                    <div className="flex items-center">
+                      <span>{Math.round(camera.rotation)}° (automatically points toward focal point)</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={Math.round(camera.rotation)}
+                        onChange={(e) => updateCameraRotation(Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                      <button 
+                        onClick={() => updateCameraRotation(camera.rotation - 5)}
+                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                        title="Rotate 5° Counter-Clockwise"
+                      >
+                        -5°
+                      </button>
+                      <button 
+                        onClick={() => updateCameraRotation(camera.rotation + 5)}
+                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                        title="Rotate 5° Clockwise"
+                      >
+                        +5°
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             </tbody>
