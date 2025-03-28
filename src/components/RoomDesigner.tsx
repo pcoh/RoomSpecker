@@ -180,7 +180,7 @@ const LABEL_OFFSET = 20;
 const DEFAULT_DOOR_WIDTH = 900;
 const DEFAULT_WINDOW_WIDTH = 1000;
 const DEFAULT_WINDOW_HEIGHT = 1200;
-const DEFAULT_WINDOW_SILL_HEIGHT = 900;
+const DEFAULT_WINDOW_SILL_HEIGHT = 915;
 
 const CANVAS_WIDTH_MM = 10000;
 const CANVAS_HEIGHT_MM = 6000;
@@ -232,7 +232,6 @@ const RoomDesigner: React.FC = () => {
   const [cabinetRuns, setCabinetRuns] = useState<CabinetRun[]>([]); // State for cabinet runs
   const [selectedRun, setSelectedRun] = useState<number | null>(null);  // Changed from string to number
   const [draggedRun, setDraggedRun] = useState<RunDragInfo | null>(null); // State for tracking run dragging
-
   const [resizingRun, setResizingRun] = useState<{
     id: string;
     handle: 'length' | 'depth';
@@ -274,6 +273,8 @@ const RoomDesigner: React.FC = () => {
     isDragging: boolean;
     isRotating: boolean;
   } | null>(null);
+  const [projectAddress, setProjectAddress] = useState<string>("");
+
 
   const handleRoomHeightChange = (roomId: string, value: string) => {
     setEditingRoomHeights({ ...editingRoomHeights, [roomId]: value });
@@ -336,6 +337,50 @@ const RoomDesigner: React.FC = () => {
       handleForceUpdateSecondaryRooms();
     }
   }, [rooms]);
+
+  const ProjectAddressInput = () => {
+    const [isEditing, setIsEditing] = useState<boolean>(false);
+    const [tempAddress, setTempAddress] = useState<string>(projectAddress);
+    
+    const handleEditSave = () => {
+      if (isEditing) {
+        // When saving, update the actual project address
+        setProjectAddress(tempAddress);
+      } else {
+        // When switching to edit mode, initialize temp value
+        setTempAddress(projectAddress);
+      }
+      setIsEditing(!isEditing);
+    };
+    
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-semibold">Project Address</h2>
+          <button
+            onClick={handleEditSave}
+            className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            {isEditing ? 'Save' : 'Edit'}
+          </button>
+        </div>
+        
+        {isEditing ? (
+          <input
+            type="text"
+            value={tempAddress}
+            onChange={(e) => setTempAddress(e.target.value)}
+            placeholder="Enter project address"
+            className="w-full mt-2 px-4 py-2 border border-gray-300 rounded"
+          />
+        ) : (
+          <p className="mt-2 text-gray-700">
+            {projectAddress ? projectAddress : "No address specified"}
+          </p>
+        )}
+      </div>
+    );
+  };
   
 
 
@@ -3492,6 +3537,7 @@ const exportRoomData = () => {
   // Step 6: Create final export object
   const exportObject = {
     projectData: {
+      address: projectAddress, // Include project address
       rooms: exportData,
       cabinetRuns: cabinetRunData,
       cabinets: cabinetData,
@@ -6475,10 +6521,12 @@ const startAddingSecondaryRoom = () => {
   return (
     <div className="space-y-8">
       <div className="bg-white rounded-lg shadow-lg p-4">
+        {/* Add ProjectAddressInput component here */}
+        <ProjectAddressInput />
         <div className="flex justify-between mb-4">
-          <div className="text-sm text-gray-600">
+          {/* <div className="text-sm text-gray-600">
             Scale: 1px = {(1/scale).toFixed(1)}mm | Canvas: 10m × 8m
-          </div>
+          </div> */}
           <div className="flex gap-2">
             <button
               onClick={startAddingSecondaryRoom}
@@ -6551,6 +6599,8 @@ const startAddingSecondaryRoom = () => {
             </button>
           </div>
         </div>
+
+        
 
         {addingDoor && (
           <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-green-50">
