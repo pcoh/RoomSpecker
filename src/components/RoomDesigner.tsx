@@ -1295,6 +1295,7 @@ const RoomDesigner: React.FC = () => {
   };
   
   
+  
   const updateCameraRotation = (rotation: number) => {
     if (camera) {
       // Normalize rotation to be between 0 and 360 degrees
@@ -1303,7 +1304,7 @@ const RoomDesigner: React.FC = () => {
         ...camera,
         rotation: normalizedRotation
       });
-      // Trigger a redraw immediately after state update
+      // Force an immediate redraw
       drawRoom();
     }
   };
@@ -3396,6 +3397,8 @@ const formatCabinetRunData = (run, roomIdMap) => {
       is_island: run.is_island
     }
   };
+
+  
   
   // If the run is snapped to a wall, update the room ID reference
   if (run.snapInfo?.isSnapped && run.snapInfo.snappedToWall) {
@@ -3412,6 +3415,18 @@ const formatCabinetRunData = (run, roomIdMap) => {
   }
   
   return exportRun;
+};
+
+const formatCameraData = (camera) => {
+  if (!camera) return null;
+  
+  return {
+    position: {
+      x: Math.round(camera.position.x),
+      y: Math.round(camera.position.y)
+    },
+    rotation: Math.round(camera.rotation)
+  };
 };
 
 // Format cabinet data for export
@@ -3470,22 +3485,26 @@ const exportRoomData = () => {
 
   // Step 4: Format cabinet data
   const cabinetData = cabinets.map(cabinet => formatCabinetData(cabinet));
+  
+  // Step 5: Format camera data (if exists)
+  const cameraData = formatCameraData(camera);
 
-  // Step 5: Create final export object
+  // Step 6: Create final export object
   const exportObject = {
     projectData: {
       rooms: exportData,
       cabinetRuns: cabinetRunData,
       cabinets: cabinetData,
+      camera: cameraData, // Add camera data to export
       exportDate: new Date().toISOString()
     }
   };
 
-  // Step 6: Convert to JSON string and replace "true"/"false" with True/False
+  // Step 7: Convert to JSON string and replace "true"/"false" with True/False
   let jsonData = JSON.stringify(exportObject, null, 2);
   jsonData = jsonData.replace(/true/g, 'True').replace(/false/g, 'False');
   
-  // Step 7: Copy to clipboard
+  // Step 8: Copy to clipboard
   copyToClipboard(jsonData);
 
   return jsonData;
