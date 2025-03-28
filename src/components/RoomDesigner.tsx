@@ -7706,18 +7706,18 @@ const startAddingSecondaryRoom = () => {
                     className="w-24 px-2 py-1 border border-gray-300 rounded"
                   />
                   <button 
-                    onClick={() => updateCameraRotation(camera.rotation - 45)}
+                    onClick={() => updateCameraRotation(camera.rotation - 5)}
                     className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                    title="Rotate 45° Counter-Clockwise"
+                    title="Rotate 5° Counter-Clockwise"
                   >
-                    -45°
+                    -5°
                   </button>
                   <button 
-                    onClick={() => updateCameraRotation(camera.rotation + 45)}
+                    onClick={() => updateCameraRotation(camera.rotation + 5)}
                     className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                    title="Rotate 45° Clockwise"
+                    title="Rotate 5° Clockwise"
                   >
-                    +45°
+                    +5°
                   </button>
                 </td>
               </tr>
