@@ -276,6 +276,7 @@ const RoomDesigner: React.FC = () => {
   const [focalPoint, setFocalPoint] = useState<{
     position: Point;
     isDragging: boolean;
+    height: number;
   } | null>(null);
   const [isAddingFocalPoint, setIsAddingFocalPoint] = useState(false);
   const [projectAddress, setProjectAddress] = useState<string>("");
@@ -1464,7 +1465,8 @@ const RoomDesigner: React.FC = () => {
   const placeFocalPoint = (position: Point) => {
     const newFocalPoint = {
       position,
-      isDragging: false
+      isDragging: false,
+      height: 1300  // Default height
     };
     
     // Update the focal point state
@@ -1517,6 +1519,18 @@ const RoomDesigner: React.FC = () => {
           isRotating: camera.isRotating
         });
       }
+      
+      // Force an immediate redraw
+      drawRoom();
+    }
+  };
+
+  const updateFocalPointHeight = (newHeight: number) => {
+    if (focalPoint && newHeight > 0) {
+      setFocalPoint({
+        ...focalPoint,
+        height: newHeight
+      });
       
       // Force an immediate redraw
       drawRoom();
@@ -3650,7 +3664,8 @@ const formatFocalPointData = (focalPoint) => {
     position: {
       x: Math.round(focalPoint.position.x),
       y: Math.round(focalPoint.position.y)
-    }
+    },
+    height: Math.round(focalPoint.height)
   };
 };
 
@@ -8071,12 +8086,6 @@ const startAddingSecondaryRoom = () => {
       <div className="bg-white rounded-lg shadow-lg p-4">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold">Focal Point Properties</h2>
-          {/* <button
-            onClick={() => setFocalPoint(null)}
-            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Remove Focal Point
-          </button> */}
         </div>
 
         <div className="overflow-x-auto">
@@ -8115,6 +8124,21 @@ const startAddingSecondaryRoom = () => {
                     value={Math.round(focalPoint.position.y)}
                     onChange={(e) => updateFocalPointPosition({ x: focalPoint.position.x, y: Number(e.target.value) })}
                     className="w-24 px-2 py-1 border border-gray-300 rounded"
+                  />
+                </td>
+              </tr>
+              {/* New height row */}
+              <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  Height (mm)
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <input
+                    type="number"
+                    value={Math.round(focalPoint.height)}
+                    onChange={(e) => updateFocalPointHeight(Number(e.target.value))}
+                    className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    min="0"
                   />
                 </td>
               </tr>
