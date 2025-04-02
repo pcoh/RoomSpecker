@@ -3524,42 +3524,177 @@ const generateWallsData = (room) => {
   return wallsData;
 };
 
+// Sort points in clockwise order around the center of the room
+const sortPointsClockwise = (points) => {
+  if (points.length < 3) return { sortedPoints: [...points], indexMapping: points.map((_, i) => i) };
+  
+  // Check if already in clockwise order
+  if (arePointsClockwise(points)) {
+    // If already clockwise, return original points with identity mapping
+    const identityMapping = {};
+    points.forEach((_, i) => { identityMapping[i] = i; });
+    return { sortedPoints: [...points], indexMapping: identityMapping };
+  }
+  
+  // If not clockwise, sort into clockwise order
+  // Calculate the center of the room
+  const center = {
+    x: points.reduce((sum, p) => sum + p.x, 0) / points.length,
+    y: points.reduce((sum, p) => sum + p.y, 0) / points.length
+  };
+  
+  // Create a copy of points with original indices
+  const pointsWithIndices = points.map((point, index) => ({ point, originalIndex: index }));
+  
+  // Sort points based on angle from center
+  // For clockwise order, we use negative angle
+  pointsWithIndices.sort((a, b) => {
+    const angleA = Math.atan2(a.point.y - center.y, a.point.x - center.x);
+    const angleB = Math.atan2(b.point.y - center.y, b.point.x - center.x);
+    return angleB - angleA;  // Note: reversed order for clockwise
+  });
+  
+  // Create index mapping from original to clockwise
+  const indexMapping = {};
+  pointsWithIndices.forEach((p, newIndex) => {
+    indexMapping[p.originalIndex] = newIndex;
+  });
+  
+  // Extract just the sorted points
+  const sortedPoints = pointsWithIndices.map(p => p.point);
+  
+  return { sortedPoints, indexMapping };
+};
+
+// Check if points are already in clockwise order
+const arePointsClockwise = (points) => {
+  if (points.length < 3) return true;
+  
+  // Calculate the signed area of the polygon
+  let signedArea = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    signedArea += points[i].x * points[j].y - points[j].x * points[i].y;
+  }
+  
+  // If signedArea is negative, the points are in clockwise order
+  // (When Z points out of the screen)
+  return signedArea < 0;
+};
+
+// Helper function to remap door/window wall indices and positions based on clockwise ordering
+// Helper function to remap door/window wall indices and positions based on clockwise ordering
+const remapWallFeatures = (features, indexMapping, sortedPoints) => {
+  return features.map(feature => {
+    // The wall index in the original data refers to the starting vertex of the wall
+    const oldWallIndex = feature.wallIndex;
+    
+    // Find which wall in the new ordering corresponds to this same physical wall
+    // A wall is uniquely identified by its two endpoints
+    const oldWallStart = oldWallIndex;
+    const oldWallEnd = (oldWallIndex + 1) % sortedPoints.length;
+    
+    // Find where these points ended up in the new ordering
+    const newStartIndex = indexMapping[oldWallStart];
+    const newEndIndex = indexMapping[oldWallEnd];
+    
+    // Check if these two points are still adjacent in the new ordering
+    // If they are, then the wall index is the lower of the two indices
+    let newWallIndex;
+    
+    if ((newEndIndex === (newStartIndex + 1) % sortedPoints.length)) {
+      // The wall maintained its orientation in the clockwise ordering
+      newWallIndex = newStartIndex;
+    } else if (newStartIndex === (newEndIndex + 1) % sortedPoints.length) {
+      // The wall flipped direction in the clockwise ordering
+      newWallIndex = newEndIndex;
+      
+      // In this case, we also need to adjust the position 
+      // because the wall reference direction is flipped
+      const wallLength = Math.sqrt(
+        Math.pow(sortedPoints[newEndIndex].x - sortedPoints[newStartIndex].x, 2) +
+        Math.pow(sortedPoints[newEndIndex].y - sortedPoints[newStartIndex].y, 2)
+      );
+      feature.position = wallLength - feature.position - feature.width;
+    } else {
+      // If the points are not adjacent in the new ordering, something went wrong
+      console.error("Wall endpoints are not adjacent in new ordering");
+      newWallIndex = newStartIndex; // Fall back to a default
+    }
+    
+    // Create a copy of the feature with updated wall index
+    return { 
+      ...feature, 
+      wallIndex: newWallIndex
+    };
+  });
+};
+
 // Format room data for export
+// Format room data for export with clockwise ordering
 const formatRoomData = (room, mappedId) => {
-  const wallsData = generateWallsData(room);
+  // Sort points clockwise for export only
+  const { sortedPoints, indexMapping } = sortPointsClockwise(room.points);
+  
+  // Generate walls data with clockwise ordering
+  const wallsData = {
+    count: room.isComplete ? (room.noClosingWall ? sortedPoints.length - 1 : sortedPoints.length) : 0,
+    from: [],
+    to: []
+  };
+  
+  if (room.isComplete) {
+    if (room.noClosingWall) {
+      // For rooms with noClosingWall flag, don't include wall connecting last to first point
+      for (let i = 0; i < sortedPoints.length - 1; i++) {
+        wallsData.from.push(i);
+        wallsData.to.push((i + 1) % sortedPoints.length);
+      }
+    } else {
+      // Normal complete rooms include all walls (including one connecting last to first)
+      for (let i = 0; i < sortedPoints.length; i++) {
+        wallsData.from.push(i);
+        wallsData.to.push((i + 1) % sortedPoints.length);
+      }
+    }
+  }
+  
+  // Remap door and window wall indices and positions
+  const remappedDoors = remapWallFeatures(room.doors, indexMapping, sortedPoints);
+  const remappedWindows = remapWallFeatures(room.windows, indexMapping, sortedPoints);
   
   return {
     id: mappedId, // Use the mapped integer ID
     isMain: room.isMain,
     isComplete: room.isComplete,
-    height: Math.round(room.height), // Include room height in export
-    wall_thickness: Math.round(room.wall_thickness), // Include wall thickness in export
-    wall_material: room.wall_material, // Include wall material in export
-    floor_material: room.floor_material, // Include floor material in export
-    ceiling_material: room.ceiling_material, // Include ceiling material in export
+    height: Math.round(room.height),
+    wall_thickness: Math.round(room.wall_thickness),
+    wall_material: room.wall_material,
+    floor_material: room.floor_material,
+    ceiling_material: room.ceiling_material,
     points: {
-      x: room.points.map(point => Math.round(point.x)),
-      y: room.points.map(point => Math.round(point.y))
+      x: sortedPoints.map(point => Math.round(point.x)),
+      y: sortedPoints.map(point => Math.round(point.y))
     },
     walls: wallsData,
     doors: {
-      count: room.doors.length,
-      wallIndices: room.doors.map(door => door.wallIndex),
-      widths: room.doors.map(door => Math.round(door.width)),
-      positions: room.doors.map(door => Math.round(door.position)),
-      heights: room.doors.map(door => Math.round(door.height || 2032)), // New property
-      frameThicknesses: room.doors.map(door => Math.round(door.frameThickness || 20)), // New property
-      frameWidths: room.doors.map(door => Math.round(door.frameWidth || 100)), // New property
-      materials: room.doors.map(door => door.material || "WhiteOak_SlipMatch_Vert") // New property
+      count: remappedDoors.length,
+      wallIndices: remappedDoors.map(door => door.wallIndex),
+      widths: remappedDoors.map(door => Math.round(door.width)),
+      positions: remappedDoors.map(door => Math.round(door.position)),
+      heights: remappedDoors.map(door => Math.round(door.height || 2032)),
+      frameThicknesses: remappedDoors.map(door => Math.round(door.frameThickness || 20)),
+      frameWidths: remappedDoors.map(door => Math.round(door.frameWidth || 100)),
+      materials: remappedDoors.map(door => door.material || "WhiteOak_SlipMatch_Vert")
     },
     windows: {
-      count: room.windows.length,
-      wallIndices: room.windows.map(window => window.wallIndex),
-      widths: room.windows.map(window => Math.round(window.width)),
-      heights: room.windows.map(window => Math.round(window.height)),
-      sillHeights: room.windows.map(window => Math.round(window.sillHeight)),
-      positions: room.windows.map(window => Math.round(window.position)),
-      types: room.windows.map(window => window.type) // Add window types to export
+      count: remappedWindows.length,
+      wallIndices: remappedWindows.map(window => window.wallIndex),
+      widths: remappedWindows.map(window => Math.round(window.width)),
+      heights: remappedWindows.map(window => Math.round(window.height)),
+      sillHeights: remappedWindows.map(window => Math.round(window.sillHeight)),
+      positions: remappedWindows.map(window => Math.round(window.position)),
+      types: remappedWindows.map(window => window.type)
     }
   };
 };
