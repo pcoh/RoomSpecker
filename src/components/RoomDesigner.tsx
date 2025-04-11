@@ -280,23 +280,10 @@ const RoomDesigner: React.FC = () => {
   } | null>(null);
   const [isAddingFocalPoint, setIsAddingFocalPoint] = useState(false);
   const [projectAddress, setProjectAddress] = useState<string>("");
+  const [editingCabinetWidths, setEditingCabinetWidths] = useState<{ [key: string]: string }>({});
 
 
-  const handleRoomHeightChange = (roomId: string, value: string) => {
-    setEditingRoomHeights({ ...editingRoomHeights, [roomId]: value });
-  };
 
-  const handleRoomHeightBlur = (roomId: string) => {
-    const newHeight = Number(editingRoomHeights[roomId]);
-    if (!isNaN(newHeight) && newHeight > 0) {
-      updateRoomHeight(roomId, newHeight);
-    }
-    
-    // Clear the editing state
-    const newEditingRoomHeights = { ...editingRoomHeights };
-    delete newEditingRoomHeights[roomId];
-    setEditingRoomHeights(newEditingRoomHeights);
-  };
   
 
 
@@ -5700,6 +5687,42 @@ const startAddingSecondaryRoom = () => {
       room.id === roomId ? { ...room, ceiling_material: material } : room
     ));
   };
+
+  const handleRoomHeightChange = (roomId: string, value: string) => {
+    setEditingRoomHeights({ ...editingRoomHeights, [roomId]: value });
+  };
+
+  const handleRoomHeightBlur = (roomId: string) => {
+    const newHeight = Number(editingRoomHeights[roomId]);
+    if (!isNaN(newHeight) && newHeight > 0) {
+      updateRoomHeight(roomId, newHeight);
+    }
+    
+    // Clear the editing state
+    const newEditingRoomHeights = { ...editingRoomHeights };
+    delete newEditingRoomHeights[roomId];
+    setEditingRoomHeights(newEditingRoomHeights);
+  };
+
+  const handleCabinetWidthChange = (cabinetId: string, value: string) => {
+    setEditingCabinetWidths({ ...editingCabinetWidths, [cabinetId]: value });
+  };
+  
+  const handleCabinetWidthBlur = (cabinetId: string) => {
+    const cabinet = cabinets.find(c => c.id === cabinetId);
+    if (!cabinet) return;
+    
+    const newWidth = Number(editingCabinetWidths[cabinetId]);
+    if (!isNaN(newWidth) && newWidth > 0) {
+      updateCabinetProperty(cabinetId, 'cabinet_width', newWidth);
+    }
+    
+    // Clear the editing state
+    const newEditingCabinetWidths = { ...editingCabinetWidths };
+    delete newEditingCabinetWidths[cabinetId];
+    setEditingCabinetWidths(newEditingCabinetWidths);
+  };
+
   
   const updateSnappedRunsPositionsImmediate = (updatedRooms: Room[]) => {
     // Only process if there are cabinet runs that might be snapped
@@ -8021,11 +8044,34 @@ const startAddingSecondaryRoom = () => {
                               ))}
                             </select>
                           </td>
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                          {/* <td className="px-4 py-2 whitespace-nowrap text-sm">
                             <input
                               type="number"
                               value={cabinet.cabinet_width}
                               onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_width', Number(e.target.value))}
+                              className="w-20 px-2 py-1 border border-gray-300 rounded"
+                              disabled={hasFixedWidth(cabinet.cabinet_type)}
+                              min={getMinCabinetWidth(cabinet.cabinet_type)}
+                              title={hasFixedWidth(cabinet.cabinet_type) 
+                                ? "Width is fixed for this cabinet type" 
+                                : `Minimum width: ${getMinCabinetWidth(cabinet.cabinet_type)}mm`}
+                            />
+                          </td> */}
+                          <td className="px-4 py-2 whitespace-nowrap text-sm">
+                            <input
+                              type="number"
+                              value={
+                                editingCabinetWidths[cabinet.id] !== undefined
+                                  ? editingCabinetWidths[cabinet.id]
+                                  : cabinet.cabinet_width
+                              }
+                              onChange={(e) => handleCabinetWidthChange(cabinet.id, e.target.value)}
+                              onBlur={() => handleCabinetWidthBlur(cabinet.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.target.blur(); // Trigger onBlur to apply the change
+                                }
+                              }}
                               className="w-20 px-2 py-1 border border-gray-300 rounded"
                               disabled={hasFixedWidth(cabinet.cabinet_type)}
                               min={getMinCabinetWidth(cabinet.cabinet_type)}
