@@ -3108,6 +3108,14 @@ const getFixedCabinetWidth = (cabinetType) => {
 
 // Helper function to get minimum width for specific cabinet types
 const getMinCabinetWidth = (cabinetType) => {
+  // Cabinet types with minimum 1200mm width for corner cabinets
+  if ([
+    'Base - Corner Left',
+    'Base - Corner Right'
+  ].includes(cabinetType)) {
+    return 1200;
+  }
+  
   // Cabinet types with minimum 600mm width
   if ([
     'Wall - Leaf Door Corner Pie Left',
@@ -5723,6 +5731,37 @@ const startAddingSecondaryRoom = () => {
     setEditingCabinetWidths(newEditingCabinetWidths);
   };
 
+  const handleCabinetTypeChange = (newType) => {
+    // Get the fixed width for this cabinet type if it has one
+    const fixedWidth = getFixedCabinetWidth(newType);
+    
+    // Get the minimum width for this cabinet type
+    const minWidth = getMinCabinetWidth(newType);
+    
+    // Set new width based on constraints
+    let newWidth;
+    
+    // If this cabinet type has a fixed width, use that
+    if (fixedWidth !== null) {
+      newWidth = fixedWidth;
+    } 
+    // Otherwise, use the larger of the minimum width or current width
+    else {
+      newWidth = Math.max(minWidth, newCabinetWidth);
+      
+      // If current width is less than minimum, use the minimum
+      if (newCabinetWidth < minWidth) {
+        newWidth = minWidth;
+      }
+    }
+    
+    // Update the cabinet type and width
+    setNewCabinetType(newType);
+    setNewCabinetWidth(newWidth);
+    
+    console.log(`Cabinet type changed to ${newType}, width set to ${newWidth}mm (minimum: ${minWidth}mm)`);
+  };
+
   
   const updateSnappedRunsPositionsImmediate = (updatedRooms: Room[]) => {
     // Only process if there are cabinet runs that might be snapped
@@ -7929,7 +7968,23 @@ const startAddingSecondaryRoom = () => {
               <div className="flex justify-between items-center mb-2">
                 <h3 className="text-lg font-medium">Cabinets in Run {selectedRun}</h3>
                 <button
-                  onClick={() => setIsAddingCabinet(true)}
+                  onClick={() => {
+                    // Get first available cabinet type for this run
+                    const initialType = getAvailableCabinetTypes(
+                      cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'
+                    )[0];
+                    
+                    // Set initial cabinet type
+                    setNewCabinetType(initialType);
+                    
+                    // Initialize with the appropriate width
+                    const fixedWidth = getFixedCabinetWidth(initialType);
+                    const minWidth = getMinCabinetWidth(initialType);
+                    setNewCabinetWidth(fixedWidth !== null ? fixedWidth : minWidth);
+                    
+                    // Show the form
+                    setIsAddingCabinet(true);
+                  }}
                   className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
                 >
                   Add Cabinet
@@ -7954,7 +8009,7 @@ const startAddingSecondaryRoom = () => {
                         <label className="text-sm font-medium">Type</label>
                         <select
                           value={newCabinetType}
-                          onChange={(e) => setNewCabinetType(e.target.value)}
+                          onChange={(e) => handleCabinetTypeChange(e.target.value)}
                           className="p-2 border border-gray-300 rounded"
                         >
                           {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
@@ -7968,7 +8023,12 @@ const startAddingSecondaryRoom = () => {
                         <input
                           type="number"
                           value={newCabinetWidth}
-                          onChange={(e) => setNewCabinetWidth(Number(e.target.value))}
+                          onChange={(e) => {
+                            // Apply minimum width constraint when changing the value
+                            const minWidth = getMinCabinetWidth(newCabinetType || '');
+                            const validatedWidth = Math.max(minWidth, Number(e.target.value));
+                            setNewCabinetWidth(validatedWidth);
+                          }}
                           className="p-2 border border-gray-300 rounded"
                           min={getMinCabinetWidth(newCabinetType || '')}
                           disabled={hasFixedWidth(newCabinetType || '')}
