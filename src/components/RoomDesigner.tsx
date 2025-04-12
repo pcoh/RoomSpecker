@@ -331,6 +331,25 @@ const RoomDesigner: React.FC = () => {
     }
   }, [rooms]);
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+  
+    // Prevent default scrolling when mouse wheel is used over the canvas
+    const preventScroll = (e) => {
+      e.preventDefault();
+      return false;
+    };
+  
+    // Add the non-passive event listener directly to the canvas element
+    canvas.addEventListener('wheel', preventScroll, { passive: false });
+  
+    // Clean up
+    return () => {
+      canvas.removeEventListener('wheel', preventScroll);
+    };
+  }, [canvasRef.current]); // Only re-run if the canvas ref changes
+
   const ProjectAddressInput = () => {
     const [isEditing, setIsEditing] = useState<boolean>(false);
     const [tempAddress, setTempAddress] = useState<string>(projectAddress);
@@ -3135,12 +3154,15 @@ const hasFixedWidth = (cabinetType) => {
 
 // Add a cabinet to a run
 const addCabinetToRun = (runId) => {
+  // Convert runId to number if it's a string
+  const numericRunId = Number(runId);
+  
   // Get the current run
-  const run = cabinetRuns.find(r => r.id === runId);
+  const run = cabinetRuns.find(r => r.id === numericRunId);
   if (!run) return;
 
   // Get existing cabinets in this run
-  const existingCabinets = cabinets.filter(c => c.cabinet_run_id === runId);
+  const existingCabinets = cabinets.filter(c => c.cabinet_run_id === numericRunId);
   
   // Calculate position for new cabinet
   let position;
@@ -3175,17 +3197,17 @@ const addCabinetToRun = (runId) => {
   
   const newCabinet = {
     id: newCabinetId,
-    cabinet_run_id: runId,  // Already an integer from caller
+    cabinet_run_id: numericRunId,  // Use numeric ID
     cabinet_type: cabinetType,
     cabinet_width: width,
     hinge_right: newCabinetHingeRight,
     material_doors: newCabinetMaterial,
     position: position,
     // Add default values for floating shelf parameters
-    floating_shelf_depth: 200, // Default depth of 200mm
-    floating_shelf_height: 100, // Default height of 100mm
-    floating_shelf_num: 1, // Default 1 shelf
-    floating_shelf_vert_spacing: 350 // Default vertical spacing of 350mm
+    floating_shelf_depth: 200,
+    floating_shelf_height: 100,
+    floating_shelf_num: 1,
+    floating_shelf_vert_spacing: 350
   };
   
   // First update the cabinets state
@@ -3193,7 +3215,7 @@ const addCabinetToRun = (runId) => {
     const newCabinets = [...prevCabinets, newCabinet];
     
     // Calculate the new run length immediately after updating cabinets
-    const runCabinets = newCabinets.filter(c => c.cabinet_run_id === runId);
+    const runCabinets = newCabinets.filter(c => c.cabinet_run_id === numericRunId);
     const totalCabinetWidth = runCabinets.reduce((sum, c) => sum + c.cabinet_width, 0);
     const startFillerWidth = run.start_type === 'Wall' ? FILLER_WIDTH : 0;
     const endFillerWidth = run.end_type === 'Wall' ? FILLER_WIDTH : 0;
@@ -3201,7 +3223,7 @@ const addCabinetToRun = (runId) => {
     
     // Update the run length directly in the same operation
     setCabinetRuns(prevRuns => prevRuns.map(r => 
-      r.id === runId ? { ...r, length: newRunLength } : r
+      r.id === numericRunId ? { ...r, length: newRunLength } : r
     ));
     
     return newCabinets;
@@ -3904,11 +3926,30 @@ const handleFileSelect = (event) => {
     try {
       // Parse the JSON content
       const jsonContent = e.target.result;
-      const parsedData = JSON.parse(jsonContent.replace(/True/g, 'true').replace(/False/g, 'false'));
+      console.log("Raw JSON content length:", jsonContent.length);
+      
+      // Log a preview of the content to debug
+      console.log("JSON preview:", jsonContent.substring(0, 1000) + "...");
+      // console.log("JSON:", jsonContent)
+      
+      // Ensure True/False are properly converted to true/false
+      const fixedContent = jsonContent.replace(/True/g, 'true').replace(/False/g, 'false');
+      
+      const parsedData = JSON.parse(fixedContent);
       
       if (!parsedData.projectData) {
         alert('Invalid JSON format: missing projectData');
         return;
+      }
+      
+      // Additional logging to debug cabinet data
+      if (parsedData.projectData.cabinets) {
+        console.log("Total cabinets in JSON:", parsedData.projectData.cabinets.length);
+        console.log("Cabinets for run 7:", parsedData.projectData.cabinets.filter(c => c.cabinet_run_id === 7));
+        
+        // Check if there are higher cab IDs than shown
+        const cabIds = parsedData.projectData.cabinets.map(c => c.id);
+        console.log("All cabinet IDs:", cabIds);
       }
       
       // Load the data into the application
@@ -3946,16 +3987,32 @@ const loadProjectData = (projectData) => {
     }
     
     // Load cabinet runs
+    let loadedRuns = [];
     if (projectData.cabinetRuns && Array.isArray(projectData.cabinetRuns)) {
-      const loadedRuns = projectData.cabinetRuns.map(runData => parseCabinetRunData(runData));
+      loadedRuns = projectData.cabinetRuns.map(runData => parseCabinetRunData(runData));
+      console.log("Parsed cabinet runs:", loadedRuns);
       setCabinetRuns(loadedRuns);
     }
     
-    // Load cabinets
-    if (projectData.cabinets && Array.isArray(projectData.cabinets)) {
-      const loadedCabinets = projectData.cabinets.map(cabinetData => parseCabinetData(cabinetData));
-      setCabinets(loadedCabinets);
-    }
+    // Load cabinets - using a timeout to ensure runs are loaded first
+    setTimeout(() => {
+      if (projectData.cabinets && Array.isArray(projectData.cabinets)) {
+        console.log("Raw cabinet data:", projectData.cabinets);
+        
+        // Explicitly check for run 7 cabinets
+        const run7Cabinets = projectData.cabinets.filter(c => c.cabinet_run_id === 7);
+        console.log("Run 7 cabinets in raw data:", run7Cabinets);
+        
+        const loadedCabinets = projectData.cabinets.map(cabinetData => {
+          return parseCabinetData(cabinetData);
+        });
+        
+        console.log("Parsed cabinets:", loadedCabinets);
+        console.log("Run 7 cabinets after parsing:", loadedCabinets.filter(c => c.cabinet_run_id === 7));
+        
+        setCabinets(loadedCabinets);
+      }
+    }, 50);
     
     // Load camera if available
     if (projectData.camera) {
@@ -4133,19 +4190,30 @@ const parseCabinetRunData = (runData) => {
 
 // Function to parse cabinet data from JSON
 const parseCabinetData = (cabinetData) => {
-  return {
-    id: cabinetData.id,
-    cabinet_run_id: cabinetData.cabinet_run_id,
-    cabinet_type: cabinetData.cabinet_type || 'Base - 2-Drawer',
-    cabinet_width: cabinetData.cabinet_width || 600,
-    hinge_right: cabinetData.hinge_right || false,
-    material_doors: cabinetData.material_doors || 'WhiteOak_SlipMatch',
-    position: cabinetData.position || 0,
-    floating_shelf_depth: cabinetData.floating_shelf_depth || 200,
-    floating_shelf_height: cabinetData.floating_shelf_height || 100,
-    floating_shelf_num: cabinetData.floating_shelf_num || 1,
-    floating_shelf_vert_spacing: cabinetData.floating_shelf_vert_spacing || 350
+  // Deep clone the cabinet data to avoid reference issues
+  const cleanData = JSON.parse(JSON.stringify(cabinetData));
+  
+  // Ensure cabinet_run_id is properly parsed as a number
+  const cabinet = {
+    id: cleanData.id || "",
+    cabinet_run_id: Number(cleanData.cabinet_run_id), // Force conversion to number
+    cabinet_type: cleanData.cabinet_type || 'Base - 2-Drawer',
+    cabinet_width: Number(cleanData.cabinet_width) || 600,
+    hinge_right: Boolean(cleanData.hinge_right),
+    material_doors: cleanData.material_doors || 'WhiteOak_SlipMatch',
+    position: Number(cleanData.position) || 0,
+    floating_shelf_depth: Number(cleanData.floating_shelf_depth) || 200,
+    floating_shelf_height: Number(cleanData.floating_shelf_height) || 100,
+    floating_shelf_num: Number(cleanData.floating_shelf_num) || 1,
+    floating_shelf_vert_spacing: Number(cleanData.floating_shelf_vert_spacing) || 350
   };
+  
+  // Log individual cabinet parsing to identify issues
+  if (cabinet.cabinet_run_id === 7) {
+    console.log("Parsing cabinet for run 7:", cabinet);
+  }
+  
+  return cabinet;
 };
 
 // Function to parse camera data from JSON
@@ -4173,45 +4241,39 @@ const parseFocalPointData = (focalPointData) => {
   };
 };
 
+const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+  // Don't need e.preventDefault() here since we're doing it in the direct event listener
+  
+  const canvas = canvasRef.current;
+  if (!canvas) return;
 
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
 
+  const worldBefore = screenToWorld(mouseX, mouseY);
 
+  const newScale = e.deltaY < 0 
+    ? Math.min(scale * ZOOM_FACTOR, MAX_SCALE)
+    : Math.max(scale / ZOOM_FACTOR, MIN_SCALE);
 
+  if (newScale === scale) return;
 
+  setScale(newScale);
 
-
-  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-
-    const worldBefore = screenToWorld(mouseX, mouseY);
-
-    const newScale = e.deltaY < 0 
-      ? Math.min(scale * ZOOM_FACTOR, MAX_SCALE)
-      : Math.max(scale / ZOOM_FACTOR, MIN_SCALE);
-
-    if (newScale === scale) return;
-
-    setScale(newScale);
-
-    const worldAfter = {
-      x: (mouseX - pan.x) / newScale,
-      y: ((canvas.height - mouseY) - pan.y) / newScale
-    };
-
-    const newPan = {
-      x: pan.x + (worldAfter.x - worldBefore.x) * newScale,
-      y: pan.y + (worldAfter.y - worldBefore.y) * newScale
-    };
-    
-    setPan(newPan);
+  const worldAfter = {
+    x: (mouseX - pan.x) / newScale,
+    y: ((canvas.height - mouseY) - pan.y) / newScale
   };
+
+  const newPan = {
+    x: pan.x + (worldAfter.x - worldBefore.x) * newScale,
+    y: pan.y + (worldAfter.y - worldBefore.y) * newScale
+  };
+  
+  setPan(newPan);
+};
+
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!activeRoom) return;
@@ -7528,19 +7590,19 @@ const startAddingSecondaryRoom = () => {
           </div>
         )}
 
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_WIDTH_px}
-          height={CANVAS_HEIGHT_px}
-          onClick={handleCanvasClick}
-          onMouseDown={handleCanvasMouseDown}
-          onMouseMove={handleCanvasMouseMove}
-          onMouseUp={handleCanvasMouseUp}
-          onMouseLeave={handleCanvasMouseUp}
-          onWheel={handleWheel}
-          onContextMenu={handleContextMenu}
-          className="border border-gray-300 rounded cursor-crosshair"
-        />
+      <canvas
+        ref={canvasRef}
+        width={CANVAS_WIDTH_px}
+        height={CANVAS_HEIGHT_px}
+        onClick={handleCanvasClick}
+        onMouseDown={handleCanvasMouseDown}
+        onMouseMove={handleCanvasMouseMove}
+        onMouseUp={handleCanvasMouseUp}
+        onMouseLeave={handleCanvasMouseUp}
+        onWheel={handleWheel}
+        onContextMenu={handleContextMenu}
+        className="border border-gray-300 rounded cursor-crosshair"
+      />
 
       {contextMenu && (
         <ContextMenu
