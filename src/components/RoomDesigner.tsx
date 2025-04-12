@@ -3878,6 +3878,307 @@ const fallbackCopyTextToClipboard = (text: string) => {
   document.body.removeChild(textArea);
 };
 
+const handleLoadJSON = () => {
+  // Only allow loading when no rooms or elements have been created
+  if (rooms.length > 0 && rooms.some(room => room.points.length > 0)) {
+    alert('Cannot load JSON when elements already exist. Please reset first.');
+    return;
+  }
+  
+  // Trigger the hidden file input
+  document.getElementById('jsonFileInput').click();
+};
+
+const handleFileSelect = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Only accept JSON files
+  if (!file.name.endsWith('.json')) {
+    alert('Please select a JSON file (.json)');
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      // Parse the JSON content
+      const jsonContent = e.target.result;
+      const parsedData = JSON.parse(jsonContent.replace(/True/g, 'true').replace(/False/g, 'false'));
+      
+      if (!parsedData.projectData) {
+        alert('Invalid JSON format: missing projectData');
+        return;
+      }
+      
+      // Load the data into the application
+      loadProjectData(parsedData.projectData);
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
+      alert('Error loading JSON file: ' + error.message);
+    }
+  };
+  
+  reader.readAsText(file);
+  
+  // Reset the file input so the same file can be selected again
+  event.target.value = '';
+};
+
+
+const loadProjectData = (projectData) => {
+  try {
+    // Set project address if available
+    if (projectData.address) {
+      setProjectAddress(projectData.address);
+    }
+    
+    // Load rooms
+    if (projectData.rooms && Array.isArray(projectData.rooms)) {
+      const loadedRooms = projectData.rooms.map(roomData => parseRoomData(roomData));
+      setRooms(loadedRooms);
+      
+      // Set active room to the main room
+      const mainRoom = loadedRooms.find(room => room.isMain);
+      if (mainRoom) {
+        setActiveRoomId(mainRoom.id);
+      }
+    }
+    
+    // Load cabinet runs
+    if (projectData.cabinetRuns && Array.isArray(projectData.cabinetRuns)) {
+      const loadedRuns = projectData.cabinetRuns.map(runData => parseCabinetRunData(runData));
+      setCabinetRuns(loadedRuns);
+    }
+    
+    // Load cabinets
+    if (projectData.cabinets && Array.isArray(projectData.cabinets)) {
+      const loadedCabinets = projectData.cabinets.map(cabinetData => parseCabinetData(cabinetData));
+      setCabinets(loadedCabinets);
+    }
+    
+    // Load camera if available
+    if (projectData.camera) {
+      setCamera(parseCameraData(projectData.camera));
+    }
+    
+    // Load focal point if available
+    if (projectData.focalPoint) {
+      setFocalPoint(parseFocalPointData(projectData.focalPoint));
+    }
+    
+    console.log('Project data loaded successfully');
+  } catch (error) {
+    console.error('Error loading project data:', error);
+    alert('Error loading project data: ' + error.message);
+  }
+};
+
+
+const parseRoomData = (roomData) => {
+  // Create a unique room ID based on the loaded ID
+  const roomId = roomData.isMain ? 'main' : `room-${roomData.id}`;
+  
+  // Initialize room structure
+  const room = {
+    id: roomId,
+    points: [],
+    doors: [],
+    windows: [],
+    isComplete: roomData.isComplete,
+    isMain: roomData.isMain,
+    height: roomData.height || 2438,
+    wall_thickness: roomData.wall_thickness || 200,
+    wall_material: roomData.wall_material || "Simple Wall Shader",
+    floor_material: roomData.floor_material || "WoodFlooring_1",
+    ceiling_material: roomData.ceiling_material || "Simple Wall Shader",
+    noClosingWall: roomData.noClosingWall || false
+  };
+  
+  // Parse points
+  if (roomData.points && roomData.points.x && roomData.points.y) {
+    for (let i = 0; i < roomData.points.x.length; i++) {
+      room.points.push({
+        x: roomData.points.x[i],
+        y: roomData.points.y[i]
+      });
+    }
+  }
+  
+  // Parse doors
+  if (roomData.doors && roomData.doors.count > 0) {
+    for (let i = 0; i < roomData.doors.count; i++) {
+      const wallIndex = roomData.doors.wallIndices[i];
+      const position = roomData.doors.positions[i];
+      const width = roomData.doors.widths[i];
+      
+      // Calculate door endpoints
+      let startPoint = { x: 0, y: 0 };
+      let endPoint = { x: 0, y: 0 };
+      
+      if (room.points.length > wallIndex) {
+        const wallStart = room.points[wallIndex];
+        const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+        
+        const dx = wallEnd.x - wallStart.x;
+        const dy = wallEnd.y - wallStart.y;
+        const wallLength = Math.sqrt(dx * dx + dy * dy);
+        
+        if (wallLength > 0) {
+          const dirX = dx / wallLength;
+          const dirY = dy / wallLength;
+          
+          startPoint = {
+            x: wallStart.x + dirX * position,
+            y: wallStart.y + dirY * position
+          };
+          
+          endPoint = {
+            x: startPoint.x + dirX * width,
+            y: startPoint.y + dirY * width
+          };
+        }
+      }
+      
+      room.doors.push({
+        wallIndex,
+        position,
+        width,
+        startPoint,
+        endPoint,
+        height: roomData.doors.heights?.[i] || 2032,
+        frameThickness: roomData.doors.frameThicknesses?.[i] || 20,
+        frameWidth: roomData.doors.frameWidths?.[i] || 100,
+        material: roomData.doors.materials?.[i] || "WhiteOak_SlipMatch_Vert"
+      });
+    }
+  }
+  
+  // Parse windows
+  if (roomData.windows && roomData.windows.count > 0) {
+    for (let i = 0; i < roomData.windows.count; i++) {
+      const wallIndex = roomData.windows.wallIndices[i];
+      const position = roomData.windows.positions[i];
+      const width = roomData.windows.widths[i];
+      
+      // Calculate window endpoints
+      let startPoint = { x: 0, y: 0 };
+      let endPoint = { x: 0, y: 0 };
+      
+      if (room.points.length > wallIndex) {
+        const wallStart = room.points[wallIndex];
+        const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+        
+        const dx = wallEnd.x - wallStart.x;
+        const dy = wallEnd.y - wallStart.y;
+        const wallLength = Math.sqrt(dx * dx + dy * dy);
+        
+        if (wallLength > 0) {
+          const dirX = dx / wallLength;
+          const dirY = dy / wallLength;
+          
+          startPoint = {
+            x: wallStart.x + dirX * position,
+            y: wallStart.y + dirY * position
+          };
+          
+          endPoint = {
+            x: startPoint.x + dirX * width,
+            y: startPoint.y + dirY * width
+          };
+        }
+      }
+      
+      room.windows.push({
+        wallIndex,
+        position,
+        width,
+        startPoint,
+        endPoint,
+        height: roomData.windows.heights?.[i] || DEFAULT_WINDOW_HEIGHT,
+        sillHeight: roomData.windows.sillHeights?.[i] || DEFAULT_WINDOW_SILL_HEIGHT,
+        type: roomData.windows.types?.[i] || 'single'
+      });
+    }
+  }
+  
+  return room;
+};
+
+const parseCabinetRunData = (runData) => {
+  return {
+    id: runData.id,
+    start_pos_x: runData.position?.x || 0,
+    start_pos_y: runData.position?.y || 0,
+    length: runData.dimensions?.length || DEFAULT_RUN_LENGTH,
+    depth: runData.dimensions?.depth || 
+           (runData.type === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER),
+    rotation_z: runData.rotation_z || 0,
+    type: runData.type || 'Base',
+    start_type: runData.properties?.start_type || 'Open',
+    end_type: runData.properties?.end_type || 'Open',
+    top_filler: runData.properties?.top_filler || false,
+    is_island: runData.properties?.is_island || false,
+    snapInfo: runData.snapInfo ? {
+      isSnapped: true,
+      snappedEdge: runData.snapInfo.snappedEdge || 'rear',
+      snappedToWall: {
+        roomId: runData.snapInfo.snappedToWall?.roomId === 0 ? 'main' : `room-${runData.snapInfo.snappedToWall?.roomId}`,
+        wallIndex: runData.snapInfo.snappedToWall?.wallIndex || 0,
+        distanceFromStart: runData.snapInfo.snappedToWall?.distanceFromStart || 0
+      }
+    } : undefined
+  };
+};
+
+// Function to parse cabinet data from JSON
+const parseCabinetData = (cabinetData) => {
+  return {
+    id: cabinetData.id,
+    cabinet_run_id: cabinetData.cabinet_run_id,
+    cabinet_type: cabinetData.cabinet_type || 'Base - 2-Drawer',
+    cabinet_width: cabinetData.cabinet_width || 600,
+    hinge_right: cabinetData.hinge_right || false,
+    material_doors: cabinetData.material_doors || 'WhiteOak_SlipMatch',
+    position: cabinetData.position || 0,
+    floating_shelf_depth: cabinetData.floating_shelf_depth || 200,
+    floating_shelf_height: cabinetData.floating_shelf_height || 100,
+    floating_shelf_num: cabinetData.floating_shelf_num || 1,
+    floating_shelf_vert_spacing: cabinetData.floating_shelf_vert_spacing || 350
+  };
+};
+
+// Function to parse camera data from JSON
+const parseCameraData = (cameraData) => {
+  return {
+    position: {
+      x: cameraData.position?.x || 0,
+      y: cameraData.position?.y || 0
+    },
+    rotation: cameraData.rotation || 0,
+    isDragging: false,
+    isRotating: false
+  };
+};
+
+// Function to parse focal point data from JSON
+const parseFocalPointData = (focalPointData) => {
+  return {
+    position: {
+      x: focalPointData.position?.x || 0,
+      y: focalPointData.position?.y || 0
+    },
+    height: focalPointData.height || 1300,
+    isDragging: false
+  };
+};
+
+
+
+
+
+
+
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -7012,6 +7313,17 @@ const startAddingSecondaryRoom = () => {
 
   return (
     <div className="space-y-8">
+      <input
+        type="file"
+        id="jsonFileInput"
+        accept=".json"
+        style={{ display: 'none' }}
+        onChange={handleFileSelect}
+      />
+
+
+
+
       <div className="bg-white rounded-lg shadow-lg p-4">
         {/* Add ProjectAddressInput component here */}
         <ProjectAddressInput />
@@ -7020,6 +7332,14 @@ const startAddingSecondaryRoom = () => {
             Scale: 1px = {(1/scale).toFixed(1)}mm | Canvas: 10m × 8m
           </div> */}
           <div className="flex gap-2">
+            <button
+              onClick={handleLoadJSON}
+              disabled={rooms.length > 0 && rooms.some(room => room.points.length > 0)}
+              className="flex items-center gap-2 px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Save size={16} />
+              Load JSON
+            </button>
             <button
               onClick={startAddingSecondaryRoom}
               disabled={!rooms.some(r => r.isMain && r.isComplete) || isAddingSecondaryRoom}
