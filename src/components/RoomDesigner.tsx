@@ -3112,6 +3112,13 @@ const getFixedCabinetWidth = (cabinetType) => {
   ].includes(cabinetType)) {
     return 763;
   }
+
+  // Cabinet types with fixed 642mm width
+  if ([
+    'Base - Dishwasher'    
+  ].includes(cabinetType)) {
+    return 642;
+  }
   
   // Cabinet types with fixed 950mm width
   if ([
@@ -3142,6 +3149,15 @@ const getMinCabinetWidth = (cabinetType) => {
   ].includes(cabinetType)) {
     return 600;
   }
+
+  // Cabinet types with minimum 425mm width
+  if ([
+    'Base - Trash 2-Drawer'
+  ].includes(cabinetType)) {
+    return 425;
+  }
+
+  
   
   // Default minimum width
   return 250;
