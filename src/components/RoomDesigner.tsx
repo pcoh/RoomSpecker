@@ -4356,7 +4356,7 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     // Check if clicking on a cabinet run
     const runId = findRunAtPosition(mousePos);
     if (runId) {
-      handleRunSelection(runId, mousePos);
+      handleRunDragStart(runId, mousePos);
       e.stopPropagation();
       return;
     }
@@ -4387,10 +4387,11 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     handlePointsAndPanning(e, mousePos);
   };
   
-  const handleRunSelection = (runId, mousePos) => {
+  const handleRunDragStart = (runId, mousePos) => {
     const run = cabinetRuns.find(r => r.id === runId);
     if (run) {
-      setSelectedRun(runId);
+      // First select the run (and a cabinet if available)
+      handleRunSelection(runId);
       
       // Remove snapInfo when starting to drag a run
       if (run.snapInfo?.isSnapped) {
@@ -4415,6 +4416,23 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
       if (canvas) {
         canvas.style.cursor = 'grabbing';
       }
+    }
+  };
+
+  const handleRunSelection = (runId) => {
+    // Convert to number if needed (the dropdown provides a string)
+    const numericRunId = Number(runId);
+    setSelectedRun(numericRunId);
+    
+    // Find cabinets in this run
+    const runCabinets = cabinets.filter(c => c.cabinet_run_id === numericRunId);
+    
+    // If there are cabinets in this run, select the first one
+    if (runCabinets.length > 0) {
+      setSelectedCabinet(runCabinets[0].id);
+    } else {
+      // Clear cabinet selection if no cabinets in this run
+      setSelectedCabinet(null);
     }
   };
   
@@ -8099,7 +8117,7 @@ const startAddingSecondaryRoom = () => {
           
           <select
             value={selectedRun || ''}
-            onChange={(e) => setSelectedRun(e.target.value)}
+            onChange={(e) => handleRunSelection(e.target.value)}
             className="px-3 py-1 border border-gray-300 rounded"
           >
             <option value="">Select Cabinet Run</option>
