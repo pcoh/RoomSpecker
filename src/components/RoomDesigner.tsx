@@ -7683,8 +7683,754 @@ const startAddingSecondaryRoom = () => {
         </ContextMenu>
       )}  
       </div>
-      
+      {/* Cabinet run tables section */}
+      {cabinetRuns.length > 0 && (
+        <div className="bg-white rounded-lg shadow-lg p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Cabinet Runs</h2>
+            
+            <select
+              value={selectedRun || ''}
+              onChange={(e) => handleRunSelection(e.target.value)}
+              className="px-3 py-1 border border-gray-300 rounded"
+            >
+              <option value="">Select Cabinet Run</option>
+              {cabinetRuns.map(run => (
+                <option key={run.id} value={run.id}>
+                  Run {run.id} ({run.is_island ? 'Island' : run.type})
+                </option>
+              ))}
+            </select>
+          </div>
 
+          {selectedRun ? (
+            <>
+              {/* Cabinet Run Properties - Keep this existing table */}
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr>
+                      <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Property
+                      </th>
+                      <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Value
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {/* Position properties */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        X Position (Rear Left Corner) (mm)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="number"
+                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_x || 0)}
+                          onChange={(e) => updateRunProperty(selectedRun, 'start_pos_x', Number(e.target.value))}
+                          className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
+                          disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
+                          title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Position is determined by wall snap" : ""}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Y Position (Rear Left Corner) (mm)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="number"
+                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_y || 0)}
+                          onChange={(e) => updateRunProperty(selectedRun, 'start_pos_y', Number(e.target.value))}
+                          className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
+                          disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
+                          title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Position is determined by wall snap" : ""}
+                        />
+                      </td>
+                    </tr>
+                    {/* Rotation property */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Rotation (°)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
+                          onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
+                          className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
+                          disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
+                          title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Rotation is determined by wall snap" : ""}
+                        />
+                        {!cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped && (
+                          <>
+                            <button 
+                              onClick={() => rotateRun(selectedRun, -90)}
+                              className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                              title="Rotate 90° Counter-Clockwise"
+                            >
+                              -90°
+                            </button>
+                            <button 
+                              onClick={() => rotateRun(selectedRun, 90)}
+                              className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                              title="Rotate 90° Clockwise"
+                            >
+                              +90°
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                    {/* Add distance from wall start input when snapped */}
+                    {cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped && (
+                      <tr>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          Distance From Wall Start (mm)
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <input
+                            type="number"
+                            value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.snappedToWall?.distanceFromStart || 0)}
+                            onChange={(e) => updateRunDistanceFromWallStart(selectedRun, Number(e.target.value))}
+                            className="w-24 px-2 py-1 border border-gray-300 rounded"
+                            min={0}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    
+                    {/* Dimension properties */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Length (mm)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="number"
+                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.length || 0)}
+                          onChange={(e) => updateRunProperty(selectedRun, 'length', Number(e.target.value))}
+                          className="w-24 px-2 py-1 border border-gray-300 rounded"
+                          disabled={cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0}
+                          title={cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? "Length is determined by cabinets" : ""}
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Depth (mm)
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
+                            onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
+                            disabled={!customDepthRuns[selectedRun]}
+                            className={`w-24 px-2 py-1 border border-gray-300 rounded ${!customDepthRuns[selectedRun] ? 'bg-gray-100' : ''}`}
+                          />
+                          <label className="flex items-center gap-1">
+                            <input
+                              type="checkbox"
+                              checked={customDepthRuns[selectedRun] || false}
+                              onChange={() => toggleCustomDepth(selectedRun)}
+                              className="w-4 h-4 border border-gray-300 rounded"
+                            />
+                            <span className="text-sm text-gray-700">Custom depth</span>
+                          </label>
+                        </div>
+                      </td>
+                    </tr>
+                    
+                    {/* Type properties */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Type
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <select
+                          value={cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'}
+                          onChange={(e) => handleRunTypeChange(selectedRun, e.target.value as 'Base' | 'Upper')}
+                          className="w-32 px-2 py-1 border border-gray-300 rounded"
+                        >
+                          <option value="Base">Base</option>
+                          <option value="Upper">Upper</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Start Type
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <select
+                          value={cabinetRuns.find(r => r.id === selectedRun)?.start_type || 'Open'}
+                          onChange={(e) => updateRunProperty(selectedRun, 'start_type', e.target.value)}
+                          className="w-32 px-2 py-1 border border-gray-300 rounded"
+                        >
+                          <option value="Open">Open</option>
+                          <option value="Wall">Wall</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        End Type
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <select
+                          value={cabinetRuns.find(r => r.id === selectedRun)?.end_type || 'Open'}
+                          onChange={(e) => updateRunProperty(selectedRun, 'end_type', e.target.value)}
+                          className="w-32 px-2 py-1 border border-gray-300 rounded"
+                        >
+                          <option value="Open">Open</option>
+                          <option value="Wall">Wall</option>
+                        </select>
+                      </td>
+                    </tr>
+                    
+                    {/* Boolean properties */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Top Filler
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={cabinetRuns.find(r => r.id === selectedRun)?.top_filler || false}
+                          onChange={() => toggleRunProperty(selectedRun, 'top_filler')}
+                          className="w-4 h-4 border border-gray-300 rounded"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Is Island
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={cabinetRuns.find(r => r.id === selectedRun)?.is_island || false}
+                          onChange={() => toggleRunProperty(selectedRun, 'is_island')}
+                          className="w-4 h-4 border border-gray-300 rounded"
+                        />
+                      </td>
+                    </tr>
+                    
+                    {/* Actions */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Actions
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <button
+                          onClick={() => deleteRun(selectedRun)}
+                          className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Cabinet Management UI - Add this after the cabinet run properties table */}
+              <div className="mt-6 border-t pt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-lg font-medium">Cabinets in Run {selectedRun}</h3>
+                  <button
+                    onClick={() => {
+                      // Get first available cabinet type for this run
+                      const initialType = getAvailableCabinetTypes(
+                        cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'
+                      )[0];
+                      
+                      // Set initial cabinet type
+                      setNewCabinetType(initialType);
+                      
+                      // Initialize with the appropriate width
+                      const fixedWidth = getFixedCabinetWidth(initialType);
+                      const minWidth = getMinCabinetWidth(initialType);
+                      setNewCabinetWidth(fixedWidth !== null ? fixedWidth : minWidth);
+                      
+                      // Show the form
+                      setIsAddingCabinet(true);
+                    }}
+                    className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Add Cabinet
+                  </button>
+                </div>
+                
+                {isAddingCabinet && (
+                  <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-green-50">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex justify-between">
+                        <h4 className="font-medium text-green-800">Add New Cabinet</h4>
+                        <button
+                          onClick={() => setIsAddingCabinet(false)}
+                          className="text-green-800 hover:text-green-900"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-sm font-medium">Type</label>
+                          <select
+                            value={newCabinetType}
+                            onChange={(e) => handleCabinetTypeChange(e.target.value)}
+                            className="p-2 border border-gray-300 rounded"
+                          >
+                            {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div className="flex flex-col gap-1">
+                          <label className="text-sm font-medium">Width (mm)</label>
+                          <input
+                            type="number"
+                            value={newCabinetWidth}
+                            onChange={(e) => {
+                              // Apply minimum width constraint when changing the value
+                              const minWidth = getMinCabinetWidth(newCabinetType || '');
+                              const validatedWidth = Math.max(minWidth, Number(e.target.value));
+                              setNewCabinetWidth(validatedWidth);
+                            }}
+                            className="p-2 border border-gray-300 rounded"
+                            min={getMinCabinetWidth(newCabinetType || '')}
+                            disabled={hasFixedWidth(newCabinetType || '')}
+                            title={hasFixedWidth(newCabinetType || '') 
+                              ? "Width is fixed for this cabinet type" 
+                              : `Minimum width: ${getMinCabinetWidth(newCabinetType || '')}mm`}
+                          />
+                        </div>
+                        
+                        <div className="flex flex-col gap-1">
+                          <label className="text-sm font-medium">Material</label>
+                          <select
+                            value={newCabinetMaterial}
+                            onChange={(e) => setNewCabinetMaterial(e.target.value)}
+                            className="p-2 border border-gray-300 rounded"
+                          >
+                            <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                            <option value="Paint - Gray">Paint - Gray</option>
+                          </select>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <label className="text-sm font-medium">Hinge Right</label>
+                          <input
+                            type="checkbox"
+                            checked={newCabinetHingeRight}
+                            onChange={(e) => setNewCabinetHingeRight(e.target.checked)}
+                            className="w-4 h-4 border border-gray-300 rounded"
+                          />
+                        </div>
+                      </div>                    
+                      <button
+                        onClick={() => addCabinetToRun(selectedRun)}
+                        className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                      >
+                        Add Cabinet
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? (
+                  <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead>
+                      <tr>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Width</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Hinge</th>
+                        <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {cabinets
+                        .filter(c => c.cabinet_run_id === selectedRun)
+                        .sort((a, b) => a.position - b.position)
+                        .map(cabinet => (
+                          <tr 
+                            key={cabinet.id}
+                            className={selectedCabinet === cabinet.id ? "bg-amber-50" : ""}
+                            onClick={() => setSelectedCabinet(cabinet.id)}
+                          >
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <select
+                                value={cabinet.cabinet_type}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_type', e.target.value)}
+                                className="w-full px-2 py-1 border border-gray-300 rounded"
+                              >
+                                {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
+                                  <option key={type} value={type}>{type}</option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <input
+                                type="number"
+                                value={cabinet.cabinet_width}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_width', Number(e.target.value))}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded"
+                                disabled={hasFixedWidth(cabinet.cabinet_type)}
+                                min={getMinCabinetWidth(cabinet.cabinet_type)}
+                                title={hasFixedWidth(cabinet.cabinet_type) 
+                                  ? "Width is fixed for this cabinet type" 
+                                  : `Minimum width: ${getMinCabinetWidth(cabinet.cabinet_type)}mm`}
+                              />
+                            </td> */}
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <input
+                                type="number"
+                                value={
+                                  editingCabinetWidths[cabinet.id] !== undefined
+                                    ? editingCabinetWidths[cabinet.id]
+                                    : cabinet.cabinet_width
+                                }
+                                onChange={(e) => handleCabinetWidthChange(cabinet.id, e.target.value)}
+                                onBlur={() => handleCabinetWidthBlur(cabinet.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.target.blur(); // Trigger onBlur to apply the change
+                                  }
+                                }}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded"
+                                disabled={hasFixedWidth(cabinet.cabinet_type)}
+                                min={getMinCabinetWidth(cabinet.cabinet_type)}
+                                title={hasFixedWidth(cabinet.cabinet_type) 
+                                  ? "Width is fixed for this cabinet type" 
+                                  : `Minimum width: ${getMinCabinetWidth(cabinet.cabinet_type)}mm`}
+                              />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              {cabinet.position}mm
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <select
+                                value={cabinet.material_doors}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'material_doors', e.target.value)}
+                                className="w-full px-2 py-1 border border-gray-300 rounded"
+                              >
+                                <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                                <option value="Paint - Gray">Paint - Gray</option>
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <input
+                                type="checkbox"
+                                checked={cabinet.hinge_right}
+                                onChange={(e) => updateCabinetProperty(cabinet.id, 'hinge_right', e.target.checked)}
+                                className="w-4 h-4 border border-gray-300 rounded"
+                                disabled={!cabinet.cabinet_type.includes('Door')}
+                              />
+                            </td>
+                            {/* Add Floating Shelf specific properties - after hinge section in the cabinet properties UI */}
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              {cabinet.cabinet_type === 'Wall - Floating Shelf' && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-1">
+                                    <label className="text-xs">Depth:</label>
+                                    <input
+                                      type="number"
+                                      value={cabinet.floating_shelf_depth || 200}
+                                      onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_depth', Number(e.target.value))}
+                                      className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                      min={100}
+                                      max={400}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <label className="text-xs">Height:</label>
+                                    <input
+                                      type="number"
+                                      value={cabinet.floating_shelf_height || 100}
+                                      onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_height', Number(e.target.value))}
+                                      className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                      min={50}
+                                      max={150}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <label className="text-xs">Count:</label>
+                                    <input
+                                      type="number"
+                                      value={cabinet.floating_shelf_num || 1}
+                                      onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_num', Number(e.target.value))}
+                                      className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                      min={1}
+                                      max={5}
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <label className="text-xs">Spacing:</label>
+                                    <input
+                                      type="number"
+                                      value={cabinet.floating_shelf_vert_spacing || 350}
+                                      onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_vert_spacing', Number(e.target.value))}
+                                      className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                                      min={200}
+                                      max={500}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm">
+                              <button
+                                onClick={(e) => removeCabinet(cabinet.id, e)}
+                                className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                ) : (
+                  <p className="text-gray-500">No cabinets in this run. Add a cabinet to get started.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-gray-500">Select a cabinet run to edit its properties</p>
+          )}
+        </div>
+      )}
+
+      {/* Doors table section  */}
+      {activeRoom?.doors.length > 0 && (
+        <div className="bg-white rounded-lg shadow-lg p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Doors</h2>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Door
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Wall
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Position (mm from wall start)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Width (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Height (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Frame Thickness (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Frame Width (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Material
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {activeRoom.doors.map((door, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Door {index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      Wall {door.wallIndex + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.position)}
+                        onChange={(e) => updateDoorPosition(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.width)}
+                        onChange={(e) => updateDoorWidth(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.height) || 2032}
+                        onChange={(e) => updateDoorHeight(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.frameThickness) || 20}
+                        onChange={(e) => updateDoorFrameThickness(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(door.frameWidth) || 100}
+                        onChange={(e) => updateDoorFrameWidth(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <select
+                        value={door.material || "WhiteOak_SlipMatch_Vert"}
+                        onChange={(e) => updateDoorMaterial(activeRoom.id, index, e.target.value)}
+                        className="w-40 px-2 py-1 border border-gray-300 rounded"
+                      >
+                        <option value="WhiteOak_SlipMatch_Vert">WhiteOak SlipMatch Vert</option>
+                        <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
+                        <option value="Paint - Gray">Paint - Gray</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <button
+                        onClick={() => removeDoor(activeRoom.id, index)}
+                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Windows table section */}
+      {activeRoom?.windows.length > 0 && (
+        <div className="bg-white rounded-lg shadow-lg p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Windows</h2>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Window
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Wall
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Position (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Width (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Height (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Sill Height (mm)
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {activeRoom.windows.map((window, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      Window {index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      Wall {window.wallIndex + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(window.position)}
+                        onChange={(e) => updateWindowPosition(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input type="number"
+                        value={Math.round(window.width)}
+                        onChange={(e) => updateWindowWidth(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(window.height)}
+                        onChange={(e) => updateWindowHeight(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <input
+                        type="number"
+                        value={Math.round(window.sillHeight)}
+                        onChange={(e) => updateWindowSillHeight(activeRoom.id, index, Number(e.target.value))}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      />
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <select
+                        value={window.type || 'single'}
+                        onChange={(e) => updateWindowType(activeRoom.id, index, e.target.value as 'single' | 'double')}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      >
+                        <option value="single">Single</option>
+                        <option value="double">Double</option>
+                      </select>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <button
+                        onClick={() => removeWindow(activeRoom.id, index)}
+                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      
+      {/* Room table section            */}
       {activeRoom && (
         <div className="bg-white rounded-lg shadow-lg p-4">
           <div className="flex justify-between items-center mb-4">
@@ -7909,10 +8655,10 @@ const startAddingSecondaryRoom = () => {
         </div>
       )}
 
-      {activeRoom?.doors.length > 0 && (
+      {camera && (
         <div className="bg-white rounded-lg shadow-lg p-4">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Doors</h2>
+            <h2 className="text-xl font-semibold">Camera Properties</h2>
           </div>
 
           <div className="overflow-x-auto">
@@ -7920,890 +8666,146 @@ const startAddingSecondaryRoom = () => {
               <thead>
                 <tr>
                   <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Door
+                    Property
                   </th>
                   <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Wall
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Position (mm from wall start)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Width (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Height (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Frame Thickness (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Frame Width (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Material
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                    Value
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {activeRoom.doors.map((door, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Door {index + 1}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      Wall {door.wallIndex + 1}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(door.position)}
-                        onChange={(e) => updateDoorPosition(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(door.width)}
-                        onChange={(e) => updateDoorWidth(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(door.height) || 2032}
-                        onChange={(e) => updateDoorHeight(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(door.frameThickness) || 20}
-                        onChange={(e) => updateDoorFrameThickness(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(door.frameWidth) || 100}
-                        onChange={(e) => updateDoorFrameWidth(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <select
-                        value={door.material || "WhiteOak_SlipMatch_Vert"}
-                        onChange={(e) => updateDoorMaterial(activeRoom.id, index, e.target.value)}
-                        className="w-40 px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="WhiteOak_SlipMatch_Vert">WhiteOak SlipMatch Vert</option>
-                        <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                        <option value="Paint - Gray">Paint - Gray</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button
-                        onClick={() => removeDoor(activeRoom.id, index)}
-                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {activeRoom?.windows.length > 0 && (
-        <div className="bg-white rounded-lg shadow-lg p-4">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">Windows</h2>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead>
                 <tr>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Window
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Wall
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Position (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Width (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Height (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Sill Height (mm)
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    X Position (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(camera.position.x)}
+                      onChange={(e) => updateCameraPosition({ x: Number(e.target.value), y: camera.position.y })}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {activeRoom.windows.map((window, index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Window {index + 1}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      Wall {window.wallIndex + 1}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(window.position)}
-                        onChange={(e) => updateWindowPosition(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input type="number"
-                        value={Math.round(window.width)}
-                        onChange={(e) => updateWindowWidth(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(window.height)}
-                        onChange={(e) => updateWindowHeight(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(window.sillHeight)}
-                        onChange={(e) => updateWindowSillHeight(activeRoom.id, index, Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <select
-                        value={window.type || 'single'}
-                        onChange={(e) => updateWindowType(activeRoom.id, index, e.target.value as 'single' | 'double')}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="single">Single</option>
-                        <option value="double">Double</option>
-                      </select>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button
-                        onClick={() => removeWindow(activeRoom.id, index)}
-                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-    {cabinetRuns.length > 0 && (
-      <div className="bg-white rounded-lg shadow-lg p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Cabinet Runs</h2>
-          
-          <select
-            value={selectedRun || ''}
-            onChange={(e) => handleRunSelection(e.target.value)}
-            className="px-3 py-1 border border-gray-300 rounded"
-          >
-            <option value="">Select Cabinet Run</option>
-            {cabinetRuns.map(run => (
-              <option key={run.id} value={run.id}>
-                Run {run.id} ({run.is_island ? 'Island' : run.type})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {selectedRun ? (
-          <>
-            {/* Cabinet Run Properties - Keep this existing table */}
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Property
-                    </th>
-                    <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Value
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {/* Position properties */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      X Position (Rear Left Corner) (mm)
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_x || 0)}
-                        onChange={(e) => updateRunProperty(selectedRun, 'start_pos_x', Number(e.target.value))}
-                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
-                        disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
-                        title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Position is determined by wall snap" : ""}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Y Position (Rear Left Corner) (mm)
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.start_pos_y || 0)}
-                        onChange={(e) => updateRunProperty(selectedRun, 'start_pos_y', Number(e.target.value))}
-                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
-                        disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
-                        title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Position is determined by wall snap" : ""}
-                      />
-                    </td>
-                  </tr>
-                  {/* Rotation property */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Rotation (°)
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.rotation_z || 0)}
-                        onChange={(e) => updateRunProperty(selectedRun, 'rotation_z', Number(e.target.value))}
-                        className={`w-24 px-2 py-1 border border-gray-300 rounded ${cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? 'bg-gray-100' : ''}`}
-                        disabled={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped}
-                        title={cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped ? "Rotation is determined by wall snap" : ""}
-                      />
-                      {!cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped && (
-                        <>
-                          <button 
-                            onClick={() => rotateRun(selectedRun, -90)}
-                            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                            title="Rotate 90° Counter-Clockwise"
-                          >
-                            -90°
-                          </button>
-                          <button 
-                            onClick={() => rotateRun(selectedRun, 90)}
-                            className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                            title="Rotate 90° Clockwise"
-                          >
-                            +90°
-                          </button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                  {/* Add distance from wall start input when snapped */}
-                  {cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.isSnapped && (
-                    <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        Distance From Wall Start (mm)
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Y Position (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(camera.position.y)}
+                      onChange={(e) => updateCameraPosition({ x: camera.position.x, y: Number(e.target.value) })}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Rotation (°)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {focalPoint ? (
+                      <div className="flex items-center">
+                        <span>{Math.round(camera.rotation)}° (automatically points toward focal point)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
                         <input
                           type="number"
-                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.snapInfo?.snappedToWall?.distanceFromStart || 0)}
-                          onChange={(e) => updateRunDistanceFromWallStart(selectedRun, Number(e.target.value))}
+                          value={Math.round(camera.rotation)}
+                          onChange={(e) => updateCameraRotation(Number(e.target.value))}
                           className="w-24 px-2 py-1 border border-gray-300 rounded"
-                          min={0}
                         />
-                      </td>
-                    </tr>
-                  )}
-                  
-                  {/* Dimension properties */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Length (mm)
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="number"
-                        value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.length || 0)}
-                        onChange={(e) => updateRunProperty(selectedRun, 'length', Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                        disabled={cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0}
-                        title={cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? "Length is determined by cabinets" : ""}
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Depth (mm)
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          value={Math.round(cabinetRuns.find(r => r.id === selectedRun)?.depth || 0)}
-                          onChange={(e) => updateRunProperty(selectedRun, 'depth', Number(e.target.value))}
-                          disabled={!customDepthRuns[selectedRun]}
-                          className={`w-24 px-2 py-1 border border-gray-300 rounded ${!customDepthRuns[selectedRun] ? 'bg-gray-100' : ''}`}
-                        />
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="checkbox"
-                            checked={customDepthRuns[selectedRun] || false}
-                            onChange={() => toggleCustomDepth(selectedRun)}
-                            className="w-4 h-4 border border-gray-300 rounded"
-                          />
-                          <span className="text-sm text-gray-700">Custom depth</span>
-                        </label>
-                      </div>
-                    </td>
-                  </tr>
-                  
-                  {/* Type properties */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Type
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <select
-                        value={cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'}
-                        onChange={(e) => handleRunTypeChange(selectedRun, e.target.value as 'Base' | 'Upper')}
-                        className="w-32 px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="Base">Base</option>
-                        <option value="Upper">Upper</option>
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Start Type
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <select
-                        value={cabinetRuns.find(r => r.id === selectedRun)?.start_type || 'Open'}
-                        onChange={(e) => updateRunProperty(selectedRun, 'start_type', e.target.value)}
-                        className="w-32 px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="Open">Open</option>
-                        <option value="Wall">Wall</option>
-                      </select>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      End Type
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <select
-                        value={cabinetRuns.find(r => r.id === selectedRun)?.end_type || 'Open'}
-                        onChange={(e) => updateRunProperty(selectedRun, 'end_type', e.target.value)}
-                        className="w-32 px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="Open">Open</option>
-                        <option value="Wall">Wall</option>
-                      </select>
-                    </td>
-                  </tr>
-                  
-                  {/* Boolean properties */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Top Filler
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="checkbox"
-                        checked={cabinetRuns.find(r => r.id === selectedRun)?.top_filler || false}
-                        onChange={() => toggleRunProperty(selectedRun, 'top_filler')}
-                        className="w-4 h-4 border border-gray-300 rounded"
-                      />
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Is Island
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <input
-                        type="checkbox"
-                        checked={cabinetRuns.find(r => r.id === selectedRun)?.is_island || false}
-                        onChange={() => toggleRunProperty(selectedRun, 'is_island')}
-                        className="w-4 h-4 border border-gray-300 rounded"
-                      />
-                    </td>
-                  </tr>
-                  
-                  {/* Actions */}
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      Actions
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <button
-                        onClick={() => deleteRun(selectedRun)}
-                        className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Cabinet Management UI - Add this after the cabinet run properties table */}
-            <div className="mt-6 border-t pt-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-medium">Cabinets in Run {selectedRun}</h3>
-                <button
-                  onClick={() => {
-                    // Get first available cabinet type for this run
-                    const initialType = getAvailableCabinetTypes(
-                      cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base'
-                    )[0];
-                    
-                    // Set initial cabinet type
-                    setNewCabinetType(initialType);
-                    
-                    // Initialize with the appropriate width
-                    const fixedWidth = getFixedCabinetWidth(initialType);
-                    const minWidth = getMinCabinetWidth(initialType);
-                    setNewCabinetWidth(fixedWidth !== null ? fixedWidth : minWidth);
-                    
-                    // Show the form
-                    setIsAddingCabinet(true);
-                  }}
-                  className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                >
-                  Add Cabinet
-                </button>
-              </div>
-              
-              {isAddingCabinet && (
-                <div className="mb-4 p-4 border border-gray-200 rounded-lg bg-green-50">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex justify-between">
-                      <h4 className="font-medium text-green-800">Add New Cabinet</h4>
-                      <button
-                        onClick={() => setIsAddingCabinet(false)}
-                        className="text-green-800 hover:text-green-900"
-                      >
-                        &times;
-                      </button>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-medium">Type</label>
-                        <select
-                          value={newCabinetType}
-                          onChange={(e) => handleCabinetTypeChange(e.target.value)}
-                          className="p-2 border border-gray-300 rounded"
+                        <button 
+                          onClick={() => updateCameraRotation(camera.rotation - 5)}
+                          className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                          title="Rotate 5° Counter-Clockwise"
                         >
-                          {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
-                            <option key={type} value={type}>{type}</option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-medium">Width (mm)</label>
-                        <input
-                          type="number"
-                          value={newCabinetWidth}
-                          onChange={(e) => {
-                            // Apply minimum width constraint when changing the value
-                            const minWidth = getMinCabinetWidth(newCabinetType || '');
-                            const validatedWidth = Math.max(minWidth, Number(e.target.value));
-                            setNewCabinetWidth(validatedWidth);
-                          }}
-                          className="p-2 border border-gray-300 rounded"
-                          min={getMinCabinetWidth(newCabinetType || '')}
-                          disabled={hasFixedWidth(newCabinetType || '')}
-                          title={hasFixedWidth(newCabinetType || '') 
-                            ? "Width is fixed for this cabinet type" 
-                            : `Minimum width: ${getMinCabinetWidth(newCabinetType || '')}mm`}
-                        />
-                      </div>
-                      
-                      <div className="flex flex-col gap-1">
-                        <label className="text-sm font-medium">Material</label>
-                        <select
-                          value={newCabinetMaterial}
-                          onChange={(e) => setNewCabinetMaterial(e.target.value)}
-                          className="p-2 border border-gray-300 rounded"
+                          -5°
+                        </button>
+                        <button 
+                          onClick={() => updateCameraRotation(camera.rotation + 5)}
+                          className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                          title="Rotate 5° Clockwise"
                         >
-                          <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                          <option value="Paint - Gray">Paint - Gray</option>
-                        </select>
+                          +5°
+                        </button>
                       </div>
-                      
-                      <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium">Hinge Right</label>
-                        <input
-                          type="checkbox"
-                          checked={newCabinetHingeRight}
-                          onChange={(e) => setNewCabinetHingeRight(e.target.checked)}
-                          className="w-4 h-4 border border-gray-300 rounded"
-                        />
-                      </div>
-                    </div>                    
-                    <button
-                      onClick={() => addCabinetToRun(selectedRun)}
-                      className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                    >
-                      Add Cabinet
-                    </button>
-                  </div>
-                </div>
-              )}
-              
-              {cabinets.filter(c => c.cabinet_run_id === selectedRun).length > 0 ? (
-                <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead>
-                    <tr>
-                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Width</th>
-                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
-                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Material</th>
-                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Hinge</th>
-                      <th className="px-4 py-2 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {cabinets
-                      .filter(c => c.cabinet_run_id === selectedRun)
-                      .sort((a, b) => a.position - b.position)
-                      .map(cabinet => (
-                        <tr 
-                          key={cabinet.id}
-                          className={selectedCabinet === cabinet.id ? "bg-amber-50" : ""}
-                          onClick={() => setSelectedCabinet(cabinet.id)}
-                        >
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            <select
-                              value={cabinet.cabinet_type}
-                              onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_type', e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded"
-                            >
-                              {getAvailableCabinetTypes(cabinetRuns.find(r => r.id === selectedRun)?.type || 'Base').map(type => (
-                                <option key={type} value={type}>{type}</option>
-                              ))}
-                            </select>
-                          </td>
-                          {/* <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            <input
-                              type="number"
-                              value={cabinet.cabinet_width}
-                              onChange={(e) => updateCabinetProperty(cabinet.id, 'cabinet_width', Number(e.target.value))}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded"
-                              disabled={hasFixedWidth(cabinet.cabinet_type)}
-                              min={getMinCabinetWidth(cabinet.cabinet_type)}
-                              title={hasFixedWidth(cabinet.cabinet_type) 
-                                ? "Width is fixed for this cabinet type" 
-                                : `Minimum width: ${getMinCabinetWidth(cabinet.cabinet_type)}mm`}
-                            />
-                          </td> */}
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            <input
-                              type="number"
-                              value={
-                                editingCabinetWidths[cabinet.id] !== undefined
-                                  ? editingCabinetWidths[cabinet.id]
-                                  : cabinet.cabinet_width
-                              }
-                              onChange={(e) => handleCabinetWidthChange(cabinet.id, e.target.value)}
-                              onBlur={() => handleCabinetWidthBlur(cabinet.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.target.blur(); // Trigger onBlur to apply the change
-                                }
-                              }}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded"
-                              disabled={hasFixedWidth(cabinet.cabinet_type)}
-                              min={getMinCabinetWidth(cabinet.cabinet_type)}
-                              title={hasFixedWidth(cabinet.cabinet_type) 
-                                ? "Width is fixed for this cabinet type" 
-                                : `Minimum width: ${getMinCabinetWidth(cabinet.cabinet_type)}mm`}
-                            />
-                          </td>
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            {cabinet.position}mm
-                          </td>
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            <select
-                              value={cabinet.material_doors}
-                              onChange={(e) => updateCabinetProperty(cabinet.id, 'material_doors', e.target.value)}
-                              className="w-full px-2 py-1 border border-gray-300 rounded"
-                            >
-                              <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                              <option value="Paint - Gray">Paint - Gray</option>
-                            </select>
-                          </td>
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            <input
-                              type="checkbox"
-                              checked={cabinet.hinge_right}
-                              onChange={(e) => updateCabinetProperty(cabinet.id, 'hinge_right', e.target.checked)}
-                              className="w-4 h-4 border border-gray-300 rounded"
-                              disabled={!cabinet.cabinet_type.includes('Door')}
-                            />
-                          </td>
-                          {/* Add Floating Shelf specific properties - after hinge section in the cabinet properties UI */}
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            {cabinet.cabinet_type === 'Wall - Floating Shelf' && (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-1">
-                                  <label className="text-xs">Depth:</label>
-                                  <input
-                                    type="number"
-                                    value={cabinet.floating_shelf_depth || 200}
-                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_depth', Number(e.target.value))}
-                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                                    min={100}
-                                    max={400}
-                                  />
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <label className="text-xs">Height:</label>
-                                  <input
-                                    type="number"
-                                    value={cabinet.floating_shelf_height || 100}
-                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_height', Number(e.target.value))}
-                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                                    min={50}
-                                    max={150}
-                                  />
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <label className="text-xs">Count:</label>
-                                  <input
-                                    type="number"
-                                    value={cabinet.floating_shelf_num || 1}
-                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_num', Number(e.target.value))}
-                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                                    min={1}
-                                    max={5}
-                                  />
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <label className="text-xs">Spacing:</label>
-                                  <input
-                                    type="number"
-                                    value={cabinet.floating_shelf_vert_spacing || 350}
-                                    onChange={(e) => updateCabinetProperty(cabinet.id, 'floating_shelf_vert_spacing', Number(e.target.value))}
-                                    className="w-16 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                                    min={200}
-                                    max={500}
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-2 whitespace-nowrap text-sm">
-                            <button
-                              onClick={(e) => removeCabinet(cabinet.id, e)}
-                              className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                            >
-                              Remove
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-              ) : (
-                <p className="text-gray-500">No cabinets in this run. Add a cabinet to get started.</p>
-              )}
-            </div>
-          </>
-        ) : (
-          <p className="text-gray-500">Select a cabinet run to edit its properties</p>
-        )}
-      </div>
-    )}
-
-    {camera && (
-      <div className="bg-white rounded-lg shadow-lg p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Camera Properties</h2>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
+      )}
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead>
-              <tr>
-                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Property
-                </th>
-                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Value
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  X Position (mm)
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <input
-                    type="number"
-                    value={Math.round(camera.position.x)}
-                    onChange={(e) => updateCameraPosition({ x: Number(e.target.value), y: camera.position.y })}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded"
-                  />
-                </td>
-              </tr>
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  Y Position (mm)
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <input
-                    type="number"
-                    value={Math.round(camera.position.y)}
-                    onChange={(e) => updateCameraPosition({ x: camera.position.x, y: Number(e.target.value) })}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded"
-                  />
-                </td>
-              </tr>
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  Rotation (°)
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {focalPoint ? (
-                    <div className="flex items-center">
-                      <span>{Math.round(camera.rotation)}° (automatically points toward focal point)</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={Math.round(camera.rotation)}
-                        onChange={(e) => updateCameraRotation(Number(e.target.value))}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      />
-                      <button 
-                        onClick={() => updateCameraRotation(camera.rotation - 5)}
-                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                        title="Rotate 5° Counter-Clockwise"
-                      >
-                        -5°
-                      </button>
-                      <button 
-                        onClick={() => updateCameraRotation(camera.rotation + 5)}
-                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                        title="Rotate 5° Clockwise"
-                      >
-                        +5°
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
+      {focalPoint && (
+        <div className="bg-white rounded-lg shadow-lg p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Focal Point Properties</h2>
+          </div>
 
-    {focalPoint && (
-      <div className="bg-white rounded-lg shadow-lg p-4">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">Focal Point Properties</h2>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead>
+                <tr>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Property
+                  </th>
+                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Value
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    X Position (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(focalPoint.position.x)}
+                      onChange={(e) => updateFocalPointPosition({ x: Number(e.target.value), y: focalPoint.position.y })}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Y Position (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(focalPoint.position.y)}
+                      onChange={(e) => updateFocalPointPosition({ x: focalPoint.position.x, y: Number(e.target.value) })}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    />
+                  </td>
+                </tr>
+                {/* New height row */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Height (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(focalPoint.height)}
+                      onChange={(e) => updateFocalPointHeight(Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      min="0"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead>
-              <tr>
-                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Property
-                </th>
-                <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Value
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  X Position (mm)
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <input
-                    type="number"
-                    value={Math.round(focalPoint.position.x)}
-                    onChange={(e) => updateFocalPointPosition({ x: Number(e.target.value), y: focalPoint.position.y })}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded"
-                  />
-                </td>
-              </tr>
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  Y Position (mm)
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <input
-                    type="number"
-                    value={Math.round(focalPoint.position.y)}
-                    onChange={(e) => updateFocalPointPosition({ x: focalPoint.position.x, y: Number(e.target.value) })}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded"
-                  />
-                </td>
-              </tr>
-              {/* New height row */}
-              <tr>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                  Height (mm)
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <input
-                    type="number"
-                    value={Math.round(focalPoint.height)}
-                    onChange={(e) => updateFocalPointHeight(Number(e.target.value))}
-                    className="w-24 px-2 py-1 border border-gray-300 rounded"
-                    min="0"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    )}
+      )}
   </div>
 );
 };
