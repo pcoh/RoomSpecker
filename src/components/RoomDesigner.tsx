@@ -2344,7 +2344,12 @@ const calculateWallAlignment = (
       const room = rooms.find(r => r.id === roomId);
       
       // Skip if the referenced room or wall doesn't exist
-      if (!room || wallIndex >= room.points.length) continue;
+      if (!room || wallIndex >= room.points.length) {
+        // Remove snap info since the room or wall no longer exists
+        updatedRuns[i].snapInfo = undefined;
+        hasUpdates = true;
+        continue;
+      }
       
       // Get the wall points
       const wallStart = room.points[wallIndex];
@@ -5425,7 +5430,141 @@ const updateDoorsAndWindowsDuringDrag = (room: Room, oldPoints: Point[]): Room =
   
   return updatedRoom;
 };
+
+const deleteRoom = (roomId) => {
+  // Don't allow deleting the main room
+  if (rooms.find(r => r.id === roomId)?.isMain) {
+    alert('Cannot delete the main room');
+    return;
+  }
   
+  // Confirm deletion
+  if (!window.confirm('Are you sure you want to delete this room?')) {
+    return;
+  }
+  
+  // Store the room to be deleted for reference
+  const roomToDelete = rooms.find(r => r.id === roomId);
+  
+  // Remove the room from state
+  setRooms(prevRooms => {
+    // First, remove the specific room
+    const updatedRooms = prevRooms.filter(r => r.id !== roomId);
+    
+    // Then, process the remaining rooms to remove any doors/windows 
+    // that might be associated with walls in the deleted room
+    return updatedRooms.map(room => {
+      // For each room, we need to check if any of its doors or windows
+      // are associated with the room being deleted
+      const updatedDoors = room.doors.filter(door => {
+        // Keep doors that don't have any association with the deleted room
+        return !isDoorAssociatedWithRoom(door, roomToDelete);
+      });
+      
+      const updatedWindows = room.windows.filter(window => {
+        // Keep windows that don't have any association with the deleted room
+        return !isWindowAssociatedWithRoom(window, roomToDelete);
+      });
+      
+      // Return the room with updated doors and windows
+      return {
+        ...room,
+        doors: updatedDoors,
+        windows: updatedWindows
+      };
+    });
+  });
+  
+  // If the active room was deleted, set the active room to the main room
+  if (activeRoomId === roomId) {
+    const mainRoom = rooms.find(r => r.isMain);
+    if (mainRoom) {
+      setActiveRoomId(mainRoom.id);
+    }
+  }
+  
+  // Reset adding secondary room state to ensure we can add a new room after deletion
+  setIsAddingSecondaryRoom(false);
+  
+  // Update any cabinet runs that might be snapped to walls in this room
+  setTimeout(updateSnappedRunsPositions, 50);
+};
+  
+const isDoorAssociatedWithRoom = (door, room) => {
+  if (!room) return false;
+  
+  // Check if the door's wall is shared with the room we're deleting
+  // This requires checking each wall in the room
+  for (let i = 0; i < room.points.length; i++) {
+    const p1 = room.points[i];
+    const p2 = room.points[(i + 1) % room.points.length];
+    
+    // Calculate distance from door points to wall endpoints
+    const distStartToP1 = Math.sqrt(Math.pow(door.startPoint.x - p1.x, 2) + Math.pow(door.startPoint.y - p1.y, 2));
+    const distStartToP2 = Math.sqrt(Math.pow(door.startPoint.x - p2.x, 2) + Math.pow(door.startPoint.y - p2.y, 2));
+    const distEndToP1 = Math.sqrt(Math.pow(door.endPoint.x - p1.x, 2) + Math.pow(door.endPoint.y - p1.y, 2));
+    const distEndToP2 = Math.sqrt(Math.pow(door.endPoint.x - p2.x, 2) + Math.pow(door.endPoint.y - p2.y, 2));
+    
+    // If both door points are very close to the wall endpoints, it's associated with this wall
+    if ((distStartToP1 < SNAP_DISTANCE / scale && distEndToP2 < SNAP_DISTANCE / scale) ||
+        (distStartToP2 < SNAP_DISTANCE / scale && distEndToP1 < SNAP_DISTANCE / scale)) {
+      return true;
+    }
+    
+    // Also check if door points lie on the wall
+    const doorMidX = (door.startPoint.x + door.endPoint.x) / 2;
+    const doorMidY = (door.startPoint.y + door.endPoint.y) / 2;
+    
+    const { distance } = distancePointToWall(
+      { x: doorMidX, y: doorMidY },
+      p1, p2
+    );
+    
+    if (distance < SNAP_DISTANCE / scale) {
+      return true;
+    }
+  }
+  
+  return false;
+};
+
+const isWindowAssociatedWithRoom = (window, room) => {
+  if (!room) return false;
+  
+  // Check if the window's wall is shared with the room we're deleting
+  // This requires checking each wall in the room
+  for (let i = 0; i < room.points.length; i++) {
+    const p1 = room.points[i];
+    const p2 = room.points[(i + 1) % room.points.length];
+    
+    // Calculate distance from window points to wall endpoints
+    const distStartToP1 = Math.sqrt(Math.pow(window.startPoint.x - p1.x, 2) + Math.pow(window.startPoint.y - p1.y, 2));
+    const distStartToP2 = Math.sqrt(Math.pow(window.startPoint.x - p2.x, 2) + Math.pow(window.startPoint.y - p2.y, 2));
+    const distEndToP1 = Math.sqrt(Math.pow(window.endPoint.x - p1.x, 2) + Math.pow(window.endPoint.y - p1.y, 2));
+    const distEndToP2 = Math.sqrt(Math.pow(window.endPoint.x - p2.x, 2) + Math.pow(window.endPoint.y - p2.y, 2));
+    
+    // If both window points are very close to the wall endpoints, it's associated with this wall
+    if ((distStartToP1 < SNAP_DISTANCE / scale && distEndToP2 < SNAP_DISTANCE / scale) ||
+        (distStartToP2 < SNAP_DISTANCE / scale && distEndToP1 < SNAP_DISTANCE / scale)) {
+      return true;
+    }
+    
+    // Also check if window points lie on the wall
+    const windowMidX = (window.startPoint.x + window.endPoint.x) / 2;
+    const windowMidY = (window.startPoint.y + window.endPoint.y) / 2;
+    
+    const { distance } = distancePointToWall(
+      { x: windowMidX, y: windowMidY },
+      p1, p2
+    );
+    
+    if (distance < SNAP_DISTANCE / scale) {
+      return true;
+    }
+  }
+  
+  return false;
+};
 const handleCanvasMouseUp = () => {
   // Reset focal point dragging state if needed
   if (focalPoint?.isDragging) {
@@ -5497,183 +5636,188 @@ const handleCanvasMouseUp = () => {
 
  
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
+const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  if (!activeRoom || activeRoom.isComplete || isDragging || isPanning || addingDoor || addingWindow) return;
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const canvas = canvasRef.current;
+  if (!canvas) return;
 
-    // Handle focal point placement first, before any other click handling
-    if (isAddingFocalPoint) {
-      const mousePos = getMousePosition(e);
-      placeFocalPoint(mousePos);
-      
-      drawRoom();
-      return; // Exit early to avoid processing other click behavior
-    }
+  // Handle focal point placement first, before any other click handling
+  if (isAddingFocalPoint) {
+    const mousePos = getMousePosition(e);
+    placeFocalPoint(mousePos);
+    
+    drawRoom();
+    return; // Exit early to avoid processing other click behavior
+  }
 
+  // Handle camera placement next
+  if (isAddingCamera) {
+    const mousePos = getMousePosition(e);
+    setCamera({
+      position: mousePos,
+      rotation: 0,
+      isDragging: false,
+      isRotating: false
+    });
+    setIsAddingCamera(false);
+    
+    // Force redraw right away 
+    drawRoom();
+    return; // Exit early to avoid processing other click behavior
+  }
 
-    // Handle camera placement next
-    if (isAddingCamera) {
-      const mousePos = getMousePosition(e);
-      setCamera({
-        position: mousePos,
-        rotation: 0,
-        isDragging: false,
-        isRotating: false
-      });
-      setIsAddingCamera(false);
-      
-      // Force redraw right away 
-      drawRoom();
-      return; // Exit early to avoid processing other click behavior
-    }
-  
-    let mousePos = getMousePosition(e);
-  
-    // For secondary rooms, implement snapping to main room points or lines
-    if (!activeRoom.isMain) {
-      // Check if we should snap to an existing vertex first
-      const nearestPoint = findNearestPoint(mousePos, activeRoom.id);
-      if (nearestPoint) {
-        // Snap to the nearest point
-        mousePos = { 
-          x: nearestPoint.point.x, 
-          y: nearestPoint.point.y,
-          roomId: nearestPoint.roomId // maintain reference to the original room
+  let mousePos = getMousePosition(e);
+
+  // For secondary rooms, implement snapping to main room points or lines
+  if (!activeRoom.isMain) {
+    // Check if we should snap to an existing vertex first
+    const nearestPoint = findNearestPoint(mousePos, activeRoom.id);
+    if (nearestPoint) {
+      // Snap to the nearest point
+      mousePos = { 
+        x: nearestPoint.point.x, 
+        y: nearestPoint.point.y,
+        roomId: nearestPoint.roomId // maintain reference to the original room
+      };
+    } else {
+      // If no point to snap to, try to snap to a line
+      const closestLine = findClosestLine(mousePos, activeRoom.id);
+      if (closestLine) {
+        // Snap to the closest point on the line
+        mousePos = {
+          x: closestLine.point.x,
+          y: closestLine.point.y,
+          attachedTo: {
+            roomId: closestLine.roomId,
+            wallIndex: closestLine.wallIndex,
+            t: closestLine.t // Parametric position on the wall (0-1)
+          }
         };
-      } else {
-        // If no point to snap to, try to snap to a line
-        const closestLine = findClosestLine(mousePos, activeRoom.id);
-        if (closestLine) {
-          // Snap to the closest point on the line
-          mousePos = {
-            x: closestLine.point.x,
-            y: closestLine.point.y,
-            attachedTo: {
-              roomId: closestLine.roomId,
-              wallIndex: closestLine.wallIndex,
-              t: closestLine.t // Parametric position on the wall (0-1)
-            }
-          };
-        }
       }
     }
-  
-    if (activeRoom.points.length === 0) {
-      if (activeRoom.isMain) {
-        setRooms(rooms.map(room => 
-          room.id === activeRoom.id 
-            ? { ...room, points: [{ x: 0, y: 0 }] }
-            : room
-        ));
-        
-        const rect = canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-        setPan({ 
-          x: screenX, 
-          y: canvas.height - screenY
-        });
-      } else {
-        const wallPoint = findClosestLine(mousePos);
-        if (!wallPoint) {
-          alert('Secondary room must start from an existing wall');
-          return;
-        }
-        
-        setRooms(rooms.map(room => 
-          room.id === activeRoom.id 
-            ? { ...room, points: [mousePos] }
-            : room
-        ));
-      }
-      return;
-    }
-  
-    // Check for room completion
-    if (activeRoom.points.length > 2) {
-      const firstPoint = activeRoom.points[0];
-      const distance = Math.sqrt(
-        Math.pow(mousePos.x - firstPoint.x, 2) + Math.pow(mousePos.y - firstPoint.y, 2)
-      );
-  
-      console.log("Trying to complete room", {
-        distance,
-        threshold: SNAP_DISTANCE / scale,
-        firstPoint,
-        mousePos
+  }
+
+  // For the first point in a new room
+  if (activeRoom.points.length === 0) {
+    // For main room, set origin at clicked point and adjust view
+    if (activeRoom.isMain) {
+      setRooms(rooms.map(room => 
+        room.id === activeRoom.id 
+          ? { ...room, points: [{ x: 0, y: 0 }] }
+          : room
+      ));
+      
+      const rect = canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      setPan({ 
+        x: screenX, 
+        y: canvas.height - screenY
       });
-  
-      // For main room or conventional completion (clicking near first point)
-      if (distance < SNAP_DISTANCE / scale) {
-        console.log("Closing room - conditions met");
-        
-        // Use a function to update room state directly to avoid race conditions
-        const completeRoom = () => {
-          setRooms(prevRooms => {
-            const newRooms = prevRooms.map(room => 
-              room.id === activeRoom.id 
-                ? { ...room, isComplete: true }
-                : room
-            );
-            console.log("Room marked as complete", newRooms);
-            return newRooms;
-          });
-        };
-        
-        completeRoom();
-        setIsAddingSecondaryRoom(false);
-        
-        // Don't call updateAttachedPoints immediately after completing the room
-        // Let the room completion take effect first
+    } else {
+      // For secondary room, check if we can place first point on a wall
+      const wallPoint = findClosestLine(mousePos);
+      if (!wallPoint) {
+        alert('Secondary room must start from an existing wall');
         return;
       }
       
-      // For secondary rooms - check if first and last points are on the same wall
-      if (!activeRoom.isMain && activeRoom.points.length >= 3) {
-        const firstPoint = activeRoom.points[0];
-        
-        // Check if both first and current points are attached to walls
-        if (firstPoint.attachedTo && mousePos.attachedTo) {
-          // Check if they're attached to the same wall
-          if (firstPoint.attachedTo.roomId === mousePos.attachedTo.roomId && 
-              firstPoint.attachedTo.wallIndex === mousePos.attachedTo.wallIndex) {
-            
-            console.log("Closing secondary room - first and last points on same wall");
-            
-            // Add the new point at the user's clicked position on the wall
-            setRooms(prevRooms => {
-              return prevRooms.map(room => 
-                room.id === activeRoom.id 
-                  ? { 
-                      ...room, 
-                      // Add the last point (snapped to the wall at user's clicked position)
-                      points: [...room.points, mousePos],
-                      // Mark the room as complete
-                      isComplete: true,
-                      // Set the flag to indicate no closing wall
-                      noClosingWall: true
-                    }
-                  : room
-              );
-            });
-            
-            setIsAddingSecondaryRoom(false);
-            return;
-          }
+      console.log(`Adding first point to room ${activeRoom.id} at position:`, mousePos);
+      
+      setRooms(prevRooms => prevRooms.map(room => 
+        room.id === activeRoom.id 
+          ? { ...room, points: [mousePos] }
+          : room
+      ));
+    }
+    return;
+  }
+
+  // Check for room completion
+  if (activeRoom.points.length > 2) {
+    const firstPoint = activeRoom.points[0];
+    const distance = Math.sqrt(
+      Math.pow(mousePos.x - firstPoint.x, 2) + 
+      Math.pow(mousePos.y - firstPoint.y, 2)
+    );
+
+    console.log("Trying to complete room", {
+      distance,
+      threshold: SNAP_DISTANCE / scale,
+      firstPoint,
+      mousePos
+    });
+
+    // For main room or conventional completion (clicking near first point)
+    if (distance < SNAP_DISTANCE / scale) {
+      console.log("Closing room - conditions met");
+      
+      // Use a function to update room state directly to avoid race conditions
+      const completeRoom = () => {
+        setRooms(prevRooms => {
+          const newRooms = prevRooms.map(room => 
+            room.id === activeRoom.id 
+              ? { ...room, isComplete: true }
+              : room
+          );
+          console.log("Room marked as complete", newRooms);
+          return newRooms;
+        });
+      };
+      
+      completeRoom();
+      setIsAddingSecondaryRoom(false);
+      
+      // Don't call updateAttachedPoints immediately after completing the room
+      // Let the room completion take effect first
+      return;
+    }
+    
+    // For secondary rooms - check if first and last points are on the same wall
+    if (!activeRoom.isMain && activeRoom.points.length >= 3) {
+      const firstPoint = activeRoom.points[0];
+      
+      // Check if both first and current points are attached to walls
+      if (firstPoint.attachedTo && mousePos.attachedTo) {
+        // Check if they're attached to the same wall
+        if (firstPoint.attachedTo.roomId === mousePos.attachedTo.roomId && 
+            firstPoint.attachedTo.wallIndex === mousePos.attachedTo.wallIndex) {
+          
+          console.log("Closing secondary room - first and last points on same wall");
+          
+          // Add the new point at the user's clicked position on the wall
+          setRooms(prevRooms => {
+            return prevRooms.map(room => 
+              room.id === activeRoom.id 
+                ? { 
+                    ...room, 
+                    // Add the last point (snapped to the wall at user's clicked position)
+                    points: [...room.points, mousePos],
+                    // Mark the room as complete
+                    isComplete: true,
+                    // Set the flag to indicate no closing wall
+                    noClosingWall: true
+                  }
+                : room
+            );
+          });
+          
+          setIsAddingSecondaryRoom(false);
+          return;
         }
       }
     }
-  
-    // If we're here, we're adding a new point to the room
-    console.log("Adding new point to room", mousePos);
-    setRooms(rooms.map(room => 
-      room.id === activeRoom.id 
-        ? { ...room, points: [...room.points, mousePos] }
-        : room
-    ));
-  };
+  }
+
+  // If we're here, we're adding a new point to the room
+  console.log("Adding new point to room", mousePos);
+  setRooms(prevRooms => prevRooms.map(room => 
+    room.id === activeRoom.id 
+      ? { ...room, points: [...room.points, mousePos] }
+      : room
+  ));
+};
 
 
 const updateAttachedPoints = () => {
@@ -5823,7 +5967,23 @@ const startAddingSecondaryRoom = () => {
     return;
   }
   
-  const newRoomId = `room-${rooms.length}`;
+  // Generate a unique ID that doesn't conflict with existing rooms
+  const existingIds = rooms
+    .filter(r => !r.isMain)
+    .map(r => {
+      // Extract numeric part from room IDs like "room-3"
+      const match = r.id.match(/room-(\d+)/);
+      return match ? parseInt(match[1]) : 0;
+    });
+  
+  // Find the next available ID
+  let nextId = 1;
+  while (existingIds.includes(nextId)) {
+    nextId++;
+  }
+  
+  const newRoomId = `room-${nextId}`;
+  
   const newRoom: Room = {
     id: newRoomId,
     points: [],
@@ -8450,10 +8610,11 @@ const startAddingSecondaryRoom = () => {
       {activeRoom && (
         <div className="bg-white rounded-lg shadow-lg p-4">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">
-              {activeRoom.isMain ? 'Main Room' : 'Secondary Room'} Dimensions
-            </h2>
-            
+          <h2 className="text-xl font-semibold">
+            {activeRoom.isMain ? 'Main Room' : 'Secondary Room'} Dimensions
+          </h2>
+          
+          <div className="flex items-center gap-2">
             <select
               value={activeRoomId || ''}
               onChange={(e) => setActiveRoomId(e.target.value)}
@@ -8465,7 +8626,18 @@ const startAddingSecondaryRoom = () => {
                 </option>
               ))}
             </select>
+            
+            {activeRoom && !activeRoom.isMain && (
+              <button
+                onClick={() => deleteRoom(activeRoom.id)}
+                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                title="Delete this room"
+              >
+                Delete Room
+              </button>
+            )}
           </div>
+        </div>
       
           {/* Room Properties */}
           <div className="mb-4 grid grid-cols-2 gap-4">
