@@ -3150,11 +3150,11 @@ const getMinCabinetWidth = (cabinetType) => {
     return 600;
   }
 
-  // Cabinet types with minimum 425mm width
+  // Cabinet types with minimum 450mm width
   if ([
     'Base - Trash 2-Drawer'
   ].includes(cabinetType)) {
-    return 425;
+    return 450;
   }
 
   
@@ -7507,7 +7507,7 @@ const startAddingSecondaryRoom = () => {
                   console.error('Error during export:', error);
                 }
               }}
-              disabled={rooms.length === 0 || !rooms.some(r => r.isComplete)}
+              disabled={rooms.length === 0 || !rooms.some(r => r.isComplete) || focalPoint === null}
               className="flex items-center gap-2 px-4 py-1 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Copy size={16} />
