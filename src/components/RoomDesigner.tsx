@@ -74,16 +74,17 @@ interface ContextMenuState {
 // Cabinet run interface definition
 interface CabinetRun {
   id: number;
-  start_pos_x: number; // Position X of the run's reference corner in mm
-  start_pos_y: number; // Position Y of the run's reference corner in mm
-  length: number;      // Length in mm
-  depth: number;       // Depth in mm
-  rotation_z: number;  // Rotation around Z axis in degrees
-  type: 'Base' | 'Upper'; // Run type
-  start_type: 'Open' | 'Wall'; // Start termination type
-  end_type: 'Open' | 'Wall';   // End termination type
-  top_filler: boolean;  // Whether there's a top filler
-  is_island: boolean;   // Whether this is an island run
+  start_pos_x: number;
+  start_pos_y: number;
+  length: number;
+  depth: number;
+  rotation_z: number;
+  type: 'Base' | 'Upper';
+  start_type: 'Open' | 'Wall';
+  end_type: 'Open' | 'Wall';
+  top_filler: boolean;
+  is_island: boolean;
+  omit_backsplash: boolean; // New property
   
   // Optional snap status for visual feedback only
   snapInfo?: {
@@ -2795,7 +2796,8 @@ const createCabinetRun = (position: Point) => {
     start_type: 'Open',
     end_type: 'Open',
     top_filler: false,
-    is_island: false, // Explicitly initialize as false
+    is_island: false,
+    omit_backsplash: false, // Initialize new property as false
     snapInfo: snapResult.shouldSnap ? {
       isSnapped: true,
       snappedEdge: snapResult.snapEdge as 'rear' | undefined,
@@ -2969,7 +2971,6 @@ const deleteRun = (id: string) => {
   }
 };
 
-
 // Function to rotate a cabinet run
 const rotateRun = (id: string, angle: number) => {
   setCabinetRuns(prevRuns => prevRuns.map(run => {
@@ -2994,7 +2995,7 @@ const rotateRun = (id: string, angle: number) => {
 };
 
 // Function to toggle run properties
-const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => {
+const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island' | 'omit_backsplash') => {
   setCabinetRuns(prevRuns => prevRuns.map(run => {
     if (run.id === id) {
       // Create a shallow copy with the toggled property
@@ -3009,6 +3010,8 @@ const toggleRunProperty = (id: string, property: 'top_filler' | 'is_island') => 
         }
       } else if (property === 'top_filler') {
         updatedRun.top_filler = !Boolean(run.top_filler);
+      } else if (property === 'omit_backsplash') {
+        updatedRun.omit_backsplash = !Boolean(run.omit_backsplash);
       }
       
       return updatedRun;
@@ -3735,7 +3738,7 @@ const formatRoomData = (room, mappedId) => {
 // Format cabinet run data for export
 const formatCabinetRunData = (run, roomIdMap) => {
   const exportRun = {
-    id: run.id, // Already an integer
+    id: run.id,
     type: run.type,
     position: {
       x: Math.round(run.start_pos_x),
@@ -3750,11 +3753,10 @@ const formatCabinetRunData = (run, roomIdMap) => {
       start_type: run.start_type,
       end_type: run.end_type,
       top_filler: run.top_filler,
-      is_island: run.is_island
+      is_island: run.is_island,
+      omit_backsplash: run.omit_backsplash
     }
   };
-
-  
   
   // If the run is snapped to a wall, update the room ID reference
   if (run.snapInfo?.isSnapped && run.snapInfo.snappedToWall) {
@@ -4192,6 +4194,7 @@ const parseCabinetRunData = (runData) => {
     end_type: runData.properties?.end_type || 'Open',
     top_filler: runData.properties?.top_filler || false,
     is_island: runData.properties?.is_island || false,
+    omit_backsplash: runData.properties?.omit_backsplash || false, // Import new property with default false
     snapInfo: runData.snapInfo ? {
       isSnapped: true,
       snappedEdge: runData.snapInfo.snappedEdge || 'rear',
@@ -7914,6 +7917,19 @@ const startAddingSecondaryRoom = () => {
                           type="checkbox"
                           checked={cabinetRuns.find(r => r.id === selectedRun)?.is_island || false}
                           onChange={() => toggleRunProperty(selectedRun, 'is_island')}
+                          className="w-4 h-4 border border-gray-300 rounded"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Omit Backsplash
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={cabinetRuns.find(r => r.id === selectedRun)?.omit_backsplash || false}
+                          onChange={() => toggleRunProperty(selectedRun, 'omit_backsplash')}
                           className="w-4 h-4 border border-gray-300 rounded"
                         />
                       </td>
