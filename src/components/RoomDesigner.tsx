@@ -2111,12 +2111,21 @@ const calculateWallAlignment = (
   };
   
   // Find the cabinet run at a given position
-  const findRunAtPosition = (position: Point): string | null => {
-    for (const run of cabinetRuns) {
-      if (isPointInRun(position, run)) {
+  const findRunAtPosition = (mousePos: Point): string | null => {
+    // First check for upper cabinet runs
+    for (const run of cabinetRuns.filter(r => r.type === 'Upper')) {
+      if (isPointInRun(mousePos, run)) {
         return run.id;
       }
     }
+    
+    // Then check for base cabinet runs if no upper cabinet run was found
+    for (const run of cabinetRuns.filter(r => r.type === 'Base')) {
+      if (isPointInRun(mousePos, run)) {
+        return run.id;
+      }
+    }
+    
     return null;
   };
 
@@ -4863,7 +4872,20 @@ const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
 
   // New helper function to handle run hovering
   const handleRunHovering = (mousePos) => {
-    const runId = findRunAtPosition(mousePos);
+    // First check upper cabinet runs
+    let hoveredUpperRunId = null;
+    for (const run of cabinetRuns.filter(r => r.type === 'Upper')) {
+      if (isPointInRun(mousePos, run)) {
+        hoveredUpperRunId = run.id;
+        break;
+      }
+    }
+    
+    // If an upper run is hovered, use that. Otherwise check base runs
+    const runId = hoveredUpperRunId || cabinetRuns.filter(r => r.type === 'Base').find(run => 
+      isPointInRun(mousePos, run)
+    )?.id || null;
+    
     if (runId !== hoverRun) {
       setHoverRun(runId);
       
