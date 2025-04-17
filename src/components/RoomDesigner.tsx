@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Copy, RotateCcw, DoorOpen, Square, Save, BookmarkPlus } from 'lucide-react';
+import { Copy, DoorOpen, Square, Save, BookmarkPlus } from 'lucide-react';
 import ContextMenu from './ContextMenu';
 
 // Room management interfaces
@@ -7669,19 +7669,6 @@ const startAddingSecondaryRoom = () => {
               <Square size={16} />
               {isAddingFocalPoint ? 'Placing Focal Point...' : 'Place Focal Point'}
             </button>
-            <button
-              onClick={() => {
-                setRooms([]);
-                setActiveRoomId(null);
-                setIsAddingSecondaryRoom(false);
-                setCabinetRuns([]); // Add this line to clear cabinet runs
-              }}
-              className="flex items-center gap-2 px-4 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
-            >
-              <RotateCcw size={16} />
-              Reset All
-            </button>
-            
             <button
               onClick={(e) => {
                 console.log('Export button clicked');
