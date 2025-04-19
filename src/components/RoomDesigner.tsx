@@ -71,7 +71,6 @@ interface ContextMenuState {
   };
 }
 
-// Cabinet run interface definition
 interface CabinetRun {
   id: number;
   start_pos_x: number;
@@ -84,7 +83,9 @@ interface CabinetRun {
   end_type: 'Open' | 'Wall';
   top_filler: boolean;
   is_island: boolean;
-  omit_backsplash: boolean; // New property
+  omit_backsplash: boolean;
+  start_connect?: number; // New property to connect to another run
+  end_connect?: number;   // New property to connect to another run
   
   // Optional snap status for visual feedback only
   snapInfo?: {
@@ -2826,6 +2827,22 @@ const createCabinetRun = (position: Point) => {
 
 // Update a cabinet run property
 const updateRunProperty = (id, property, value) => {
+  // Handle special case for start_connect and end_connect
+  if (property === 'start_connect' || property === 'end_connect') {
+    // Prevent a run from connecting to itself
+    if (value === id) {
+      alert('A cabinet run cannot connect to itself');
+      return;
+    }
+    
+    // Just update the property directly
+    setCabinetRuns(prevRuns => prevRuns.map(run => {
+      if (run.id !== id) return run;
+      return { ...run, [property]: value === '' ? null : Number(value) };
+    }));
+    return;
+  }
+  
   // Handle start_type changes specifically
   if (property === 'start_type') {
     // Get the current run and its state
@@ -3768,7 +3785,9 @@ const formatCabinetRunData = (run, roomIdMap) => {
       end_type: run.end_type,
       top_filler: run.top_filler,
       is_island: run.is_island,
-      omit_backsplash: run.omit_backsplash
+      omit_backsplash: run.omit_backsplash,
+      start_connect: run.start_connect || null,
+      end_connect: run.end_connect || null
     }
   };
   
@@ -4208,7 +4227,9 @@ const parseCabinetRunData = (runData) => {
     end_type: runData.properties?.end_type || 'Open',
     top_filler: runData.properties?.top_filler || false,
     is_island: runData.properties?.is_island || false,
-    omit_backsplash: runData.properties?.omit_backsplash || false, // Import new property with default false
+    omit_backsplash: runData.properties?.omit_backsplash || false,
+    start_connect: runData.properties?.start_connect || null,
+    end_connect: runData.properties?.end_connect || null,
     snapInfo: runData.snapInfo ? {
       isSnapped: true,
       snappedEdge: runData.snapInfo.snappedEdge || 'rear',
@@ -6930,6 +6951,10 @@ const startAddingSecondaryRoom = () => {
   };
   
   const drawCabinetRuns = (ctx) => {
+    // First, draw connection lines between runs
+    drawRunConnections(ctx);
+    
+    // Then draw the individual runs as before
     cabinetRuns.forEach(run => {
       // Save canvas state
       ctx.save();
@@ -6955,6 +6980,72 @@ const startAddingSecondaryRoom = () => {
       // Restore canvas state
       ctx.restore();
     });
+  };
+  
+  // New function to draw connections between runs
+  const drawRunConnections = (ctx) => {
+    // For each run, check if it has connections
+    cabinetRuns.forEach(run => {
+      // Draw start connection if exists
+      if (run.start_connect) {
+        const connectedRun = cabinetRuns.find(r => r.id === run.start_connect);
+        if (connectedRun) {
+          drawRunConnection(ctx, run, connectedRun, 'start');
+        }
+      }
+      
+      // Draw end connection if exists
+      if (run.end_connect) {
+        const connectedRun = cabinetRuns.find(r => r.id === run.end_connect);
+        if (connectedRun) {
+          drawRunConnection(ctx, run, connectedRun, 'end');
+        }
+      }
+    });
+  };
+  
+  // Helper function to draw a single connection
+  const drawRunConnection = (ctx, sourceRun, targetRun, connectionType) => {
+    // Get source run corners
+    const sourceCorners = calculateRunCorners(sourceRun);
+    
+    // Determine the source point based on connection type
+    let sourcePoint;
+    if (connectionType === 'start') {
+      sourcePoint = worldToScreen(sourceCorners.rearLeft.x, sourceCorners.rearLeft.y);
+    } else { // 'end'
+      sourcePoint = worldToScreen(sourceCorners.rearRight.x, sourceCorners.rearRight.y);
+    }
+    
+    // Get target run corners
+    const targetCorners = calculateRunCorners(targetRun);
+    
+    // Simple approach: connect to center of target run
+    const targetCenter = {
+      x: (targetCorners.rearLeft.x + targetCorners.rearRight.x) / 2,
+      y: (targetCorners.rearLeft.y + targetCorners.rearRight.y) / 2
+    };
+    const targetScreenPoint = worldToScreen(targetCenter.x, targetCenter.y);
+    
+    // Draw the connection line
+    ctx.beginPath();
+    ctx.moveTo(sourcePoint.x, sourcePoint.y);
+    ctx.lineTo(targetScreenPoint.x, targetScreenPoint.y);
+    ctx.strokeStyle = '#9333ea'; // Purple color for connections
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]); // Dashed line
+    ctx.stroke();
+    ctx.setLineDash([]); // Reset dash pattern
+    
+    // Draw a small label on the line
+    const midX = (sourcePoint.x + targetScreenPoint.x) / 2;
+    const midY = (sourcePoint.y + targetScreenPoint.y) / 2;
+    
+    ctx.fillStyle = '#9333ea';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${connectionType} → Run ${targetRun.id}`, midX, midY - 10);
   };
   
   const drawRunBase = (ctx, run, width, height) => {
@@ -8044,6 +8135,50 @@ const startAddingSecondaryRoom = () => {
                         >
                           <option value="Open">Open</option>
                           <option value="Wall">Wall</option>
+                        </select>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        Start Connect To Run
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <select
+                          value={cabinetRuns.find(r => r.id === selectedRun)?.start_connect || ''}
+                          onChange={(e) => updateRunProperty(selectedRun, 'start_connect', e.target.value)}
+                          className="w-32 px-2 py-1 border border-gray-300 rounded"
+                        >
+                          <option value="">None</option>
+                          {cabinetRuns
+                            .filter(r => r.id !== selectedRun) // Filter out current run
+                            .map(run => (
+                              <option key={run.id} value={run.id}>
+                                Run {run.id} ({run.is_island ? 'Island' : run.type})
+                              </option>
+                            ))}
+                        </select>
+                      </td>
+                    </tr>
+
+                    {/* Add between End Type and Top Filler in the table */}
+                    <tr>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        End Connect To Run
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <select
+                          value={cabinetRuns.find(r => r.id === selectedRun)?.end_connect || ''}
+                          onChange={(e) => updateRunProperty(selectedRun, 'end_connect', e.target.value)}
+                          className="w-32 px-2 py-1 border border-gray-300 rounded"
+                        >
+                          <option value="">None</option>
+                          {cabinetRuns
+                            .filter(r => r.id !== selectedRun) // Filter out current run
+                            .map(run => (
+                              <option key={run.id} value={run.id}>
+                                Run {run.id} ({run.is_island ? 'Island' : run.type})
+                              </option>
+                            ))}
                         </select>
                       </td>
                     </tr>
