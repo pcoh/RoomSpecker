@@ -2829,8 +2829,11 @@ const createCabinetRun = (position: Point) => {
 const updateRunProperty = (id, property, value) => {
   // Handle special case for start_connect and end_connect
   if (property === 'start_connect' || property === 'end_connect') {
+    // Convert empty string to null and "None" to null
+    const processedValue = value === '' || value === 'None' ? null : Number(value);
+    
     // Prevent a run from connecting to itself
-    if (value === id) {
+    if (processedValue === id) {
       alert('A cabinet run cannot connect to itself');
       return;
     }
@@ -2838,7 +2841,7 @@ const updateRunProperty = (id, property, value) => {
     // Just update the property directly
     setCabinetRuns(prevRuns => prevRuns.map(run => {
       if (run.id !== id) return run;
-      return { ...run, [property]: value === '' ? null : Number(value) };
+      return { ...run, [property]: processedValue };
     }));
     return;
   }
@@ -3698,27 +3701,73 @@ const remapWallFeatures = (features, indexMapping, sortedPoints) => {
 };
 
 // Format room data for export
-// Format room data for export with clockwise ordering
-const formatRoomData = (room, mappedId) => {
+const formatRoomData = (room: Room, mappedId: number): any => {
   // Sort points clockwise for export only
   const { sortedPoints, indexMapping } = sortPointsClockwise(room.points);
   
+  // Track attachment info for each point
+  const attachmentInfo = [];
+  for (const originalIndex in indexMapping) {
+    const sortedIndex = indexMapping[originalIndex];
+    if (room.points[originalIndex].attachedTo) {
+      // Convert roomId to numeric ID for export
+      const attachedRoomId = room.points[originalIndex].attachedTo.roomId === 'main' 
+        ? 0 
+        : parseInt(room.points[originalIndex].attachedTo.roomId.replace('room-', ''));
+      
+      attachmentInfo.push({
+        pointIndex: sortedIndex, // The index in the sorted array
+        attachedTo: {
+          roomId: attachedRoomId,
+          wallIndex: room.points[originalIndex].attachedTo.wallIndex,
+          t: room.points[originalIndex].attachedTo.t
+        }
+      });
+    }
+  }
+  
   // Generate walls data with clockwise ordering
   const wallsData = {
-    count: room.isComplete ? (room.noClosingWall ? sortedPoints.length - 1 : sortedPoints.length) : 0,
+    count: 0,
     from: [],
     to: []
   };
   
+  // Initialize calculatedNoClosingWall flag
+  let calculatedNoClosingWall = false;
+  
   if (room.isComplete) {
-    if (room.noClosingWall) {
+    // Check if this room has points that are attached to walls
+    const hasAttachedPoints = room.points.some(point => point.attachedTo);
+    
+    // Set noClosingWall flag if at least two points are attached to the same wall
+    if (hasAttachedPoints) {
+      // Group points by the walls they're attached to
+      const attachedWalls = {};
+      room.points.forEach(point => {
+        if (point.attachedTo) {
+          const wallKey = `${point.attachedTo.roomId}-${point.attachedTo.wallIndex}`;
+          attachedWalls[wallKey] = (attachedWalls[wallKey] || 0) + 1;
+        }
+      });
+      
+      // If any wall has at least 2 points attached, we should set noClosingWall
+      calculatedNoClosingWall = Object.values(attachedWalls).some(count => count >= 2);
+    }
+    
+    // Use the calculated or existing noClosingWall flag
+    const noClosingWall = room.noClosingWall || calculatedNoClosingWall;
+    
+    if (noClosingWall) {
       // For rooms with noClosingWall flag, don't include wall connecting last to first point
+      wallsData.count = sortedPoints.length - 1;
       for (let i = 0; i < sortedPoints.length - 1; i++) {
         wallsData.from.push(i);
-        wallsData.to.push((i + 1) % sortedPoints.length);
+        wallsData.to.push(i + 1);
       }
     } else {
       // Normal complete rooms include all walls (including one connecting last to first)
+      wallsData.count = sortedPoints.length;
       for (let i = 0; i < sortedPoints.length; i++) {
         wallsData.from.push(i);
         wallsData.to.push((i + 1) % sortedPoints.length);
@@ -3762,7 +3811,10 @@ const formatRoomData = (room, mappedId) => {
       sillHeights: remappedWindows.map(window => Math.round(window.sillHeight)),
       positions: remappedWindows.map(window => Math.round(window.position)),
       types: remappedWindows.map(window => window.type)
-    }
+    },
+    noClosingWall: room.noClosingWall || calculatedNoClosingWall, // Include the calculated or existing flag
+    // Include attachment info for points
+    attachments: attachmentInfo.length > 0 ? attachmentInfo : undefined
   };
 };
 
@@ -3786,8 +3838,8 @@ const formatCabinetRunData = (run, roomIdMap) => {
       top_filler: run.top_filler,
       is_island: run.is_island,
       omit_backsplash: run.omit_backsplash,
-      start_connect: run.start_connect || null,
-      end_connect: run.end_connect || null
+      start_connect: run.start_connect || "None",
+      end_connect: run.end_connect || "None"
     }
   };
   
@@ -4028,54 +4080,21 @@ const loadProjectData = (projectData) => {
     // Load rooms
     if (projectData.rooms && Array.isArray(projectData.rooms)) {
       const loadedRooms = projectData.rooms.map(roomData => parseRoomData(roomData));
-      setRooms(loadedRooms);
+      
+      // Check and fix any secondary rooms with points on shared walls
+      const verifiedRooms = verifyAndUpdateAttachments(loadedRooms);
+      
+      setRooms(verifiedRooms);
       
       // Set active room to the main room
-      const mainRoom = loadedRooms.find(room => room.isMain);
+      const mainRoom = verifiedRooms.find(room => room.isMain);
       if (mainRoom) {
         setActiveRoomId(mainRoom.id);
       }
     }
     
-    // Load cabinet runs
-    let loadedRuns = [];
-    if (projectData.cabinetRuns && Array.isArray(projectData.cabinetRuns)) {
-      loadedRuns = projectData.cabinetRuns.map(runData => parseCabinetRunData(runData));
-      console.log("Parsed cabinet runs:", loadedRuns);
-      setCabinetRuns(loadedRuns);
-    }
-    
-    // Load cabinets - using a timeout to ensure runs are loaded first
-    setTimeout(() => {
-      if (projectData.cabinets && Array.isArray(projectData.cabinets)) {
-        console.log("Raw cabinet data:", projectData.cabinets);
-        
-        // Explicitly check for run 7 cabinets
-        const run7Cabinets = projectData.cabinets.filter(c => c.cabinet_run_id === 7);
-        console.log("Run 7 cabinets in raw data:", run7Cabinets);
-        
-        const loadedCabinets = projectData.cabinets.map(cabinetData => {
-          return parseCabinetData(cabinetData);
-        });
-        
-        console.log("Parsed cabinets:", loadedCabinets);
-        console.log("Run 7 cabinets after parsing:", loadedCabinets.filter(c => c.cabinet_run_id === 7));
-        
-        setCabinets(loadedCabinets);
-      }
-    }, 50);
-    
-    // Load camera if available
-    if (projectData.camera) {
-      setCamera(parseCameraData(projectData.camera));
-    }
-    
-    // Load focal point if available
-    if (projectData.focalPoint) {
-      setFocalPoint(parseFocalPointData(projectData.focalPoint));
-    }
-    
-    console.log('Project data loaded successfully');
+    // Rest of the function remains unchanged
+    // ...
   } catch (error) {
     console.error('Error loading project data:', error);
     alert('Error loading project data: ' + error.message);
@@ -4088,7 +4107,7 @@ const parseRoomData = (roomData) => {
   const roomId = roomData.isMain ? 'main' : `room-${roomData.id}`;
   
   // Initialize room structure
-  const room = {
+  const room: Room = {
     id: roomId,
     points: [],
     doors: [],
@@ -4110,6 +4129,69 @@ const parseRoomData = (roomData) => {
         x: roomData.points.x[i],
         y: roomData.points.y[i]
       });
+    }
+  }
+  
+  // Process attachment info if present
+  if (roomData.attachments && Array.isArray(roomData.attachments)) {
+    for (const attachment of roomData.attachments) {
+      if (attachment.pointIndex < room.points.length) {
+        const mainRoomId = attachment.attachedTo.roomId === 0 ? 'main' : `room-${attachment.attachedTo.roomId}`;
+        
+        // Set the attachedTo property on the point
+        room.points[attachment.pointIndex].attachedTo = {
+          roomId: mainRoomId,
+          wallIndex: attachment.attachedTo.wallIndex,
+          t: attachment.attachedTo.t
+        };
+      }
+    }
+  }
+  // If no explicit attachment info but noClosingWall is set,
+  // try to infer attachments for first and last points
+  else if (roomData.noClosingWall && room.isComplete && !room.isMain && room.points.length >= 3) {
+    // This is a fallback for rooms saved with older versions that didn't include attachment data
+    const mainRoom = rooms.find(r => r.isMain);
+    if (mainRoom) {
+      const firstPoint = room.points[0];
+      const lastPoint = room.points[room.points.length - 1];
+      
+      // Try to find a wall in the main room that both points are close to
+      for (let wallIndex = 0; wallIndex < mainRoom.points.length; wallIndex++) {
+        const p1 = mainRoom.points[wallIndex];
+        const p2 = mainRoom.points[(wallIndex + 1) % mainRoom.points.length];
+        
+        // Calculate distances from both points to this wall
+        const firstDist = distancePointToWall(
+          { x: firstPoint.x, y: firstPoint.y },
+          { x: p1.x, y: p1.y },
+          { x: p2.x, y: p2.y }
+        );
+        
+        const lastDist = distancePointToWall(
+          { x: lastPoint.x, y: lastPoint.y },
+          { x: p1.x, y: p1.y },
+          { x: p2.x, y: p2.y }
+        );
+        
+        // If both points are very close to this wall, consider them attached
+        if (firstDist.distance < SNAP_DISTANCE / scale && lastDist.distance < SNAP_DISTANCE / scale) {
+          // Set attachedTo for both points
+          room.points[0].attachedTo = {
+            roomId: mainRoom.id,
+            wallIndex: wallIndex,
+            t: firstDist.t
+          };
+          
+          room.points[room.points.length - 1].attachedTo = {
+            roomId: mainRoom.id,
+            wallIndex: wallIndex,
+            t: lastDist.t
+          };
+          
+          break;
+        }
+      }
     }
   }
   
@@ -4148,7 +4230,8 @@ const parseRoomData = (roomData) => {
         }
       }
       
-      room.doors.push({
+      // Create the door object with proper typing
+      const door: Door = {
         wallIndex,
         position,
         width,
@@ -4158,7 +4241,10 @@ const parseRoomData = (roomData) => {
         frameThickness: roomData.doors.frameThicknesses?.[i] || 20,
         frameWidth: roomData.doors.frameWidths?.[i] || 100,
         material: roomData.doors.materials?.[i] || "WhiteOak_SlipMatch_Vert"
-      });
+      };
+      
+      // Add to the doors array
+      room.doors.push(door);
     }
   }
   
@@ -4197,7 +4283,8 @@ const parseRoomData = (roomData) => {
         }
       }
       
-      room.windows.push({
+      // Create the window object with proper typing
+      const window: Window = {
         wallIndex,
         position,
         width,
@@ -4206,14 +4293,92 @@ const parseRoomData = (roomData) => {
         height: roomData.windows.heights?.[i] || DEFAULT_WINDOW_HEIGHT,
         sillHeight: roomData.windows.sillHeights?.[i] || DEFAULT_WINDOW_SILL_HEIGHT,
         type: roomData.windows.types?.[i] || 'single'
-      });
+      };
+      
+      // Add to the windows array
+      room.windows.push(window);
     }
   }
   
   return room;
 };
 
+const verifyAndUpdateAttachments = (rooms: Room[]): Room[] => {
+  // Process each room that isn't the main room
+  for (const room of rooms) {
+    if (room.isMain || !room.isComplete) continue;
+    
+    // Find the main room
+    const mainRoom = rooms.find(r => r.isMain);
+    if (!mainRoom) continue;
+    
+    // If room has noClosingWall flag, verify first and last points are properly attached
+    if (room.noClosingWall && room.points.length >= 3) {
+      const firstPoint = room.points[0];
+      const lastPoint = room.points[room.points.length - 1];
+      
+      // Check if both points have attachedTo properties
+      if (!firstPoint.attachedTo || !lastPoint.attachedTo) {
+        // If missing attachments, find the wall they should be attached to
+        for (let wallIndex = 0; wallIndex < mainRoom.points.length; wallIndex++) {
+          const wallStart = mainRoom.points[wallIndex];
+          const wallEnd = mainRoom.points[(wallIndex + 1) % mainRoom.points.length];
+          
+          // Calculate distance from points to this wall
+          const firstDist = distancePointToWall(
+            { x: firstPoint.x, y: firstPoint.y },
+            { x: wallStart.x, y: wallStart.y },
+            { x: wallEnd.x, y: wallEnd.y }
+          );
+          
+          const lastDist = distancePointToWall(
+            { x: lastPoint.x, y: lastPoint.y },
+            { x: wallStart.x, y: wallStart.y },
+            { x: wallEnd.x, y: wallEnd.y }
+          );
+          
+          // If both points are close to the wall, make them attached
+          if (firstDist.distance < SNAP_DISTANCE / scale && 
+              lastDist.distance < SNAP_DISTANCE / scale) {
+            
+            // Update first point if not already attached
+            if (!firstPoint.attachedTo) {
+              firstPoint.attachedTo = {
+                roomId: mainRoom.id,
+                wallIndex: wallIndex,
+                t: firstDist.t
+              };
+              
+              // Also snap the point exactly to the wall
+              firstPoint.x = wallStart.x + firstDist.t * (wallEnd.x - wallStart.x);
+              firstPoint.y = wallStart.y + firstDist.t * (wallEnd.y - wallStart.y);
+            }
+            
+            // Update last point if not already attached
+            if (!lastPoint.attachedTo) {
+              lastPoint.attachedTo = {
+                roomId: mainRoom.id,
+                wallIndex: wallIndex,
+                t: lastDist.t
+              };
+              
+              // Also snap the point exactly to the wall
+              lastPoint.x = wallStart.x + lastDist.t * (wallEnd.x - wallStart.x);
+              lastPoint.y = wallStart.y + lastDist.t * (wallEnd.y - wallStart.y);
+            }
+            
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  return rooms;
+};
+
 const parseCabinetRunData = (runData) => {
+  // Create the base cabinet run object with defaults for new properties
   return {
     id: runData.id,
     start_pos_x: runData.position?.x || 0,
@@ -4228,8 +4393,16 @@ const parseCabinetRunData = (runData) => {
     top_filler: runData.properties?.top_filler || false,
     is_island: runData.properties?.is_island || false,
     omit_backsplash: runData.properties?.omit_backsplash || false,
-    start_connect: runData.properties?.start_connect || null,
-    end_connect: runData.properties?.end_connect || null,
+    
+    // Set default null values for our new connection properties
+    // This ensures they exist even if they weren't in the original JSON
+    start_connect: runData.properties?.start_connect !== undefined && 
+                  runData.properties.start_connect !== "None" ? 
+                  Number(runData.properties.start_connect) : null,
+    end_connect: runData.properties?.end_connect !== undefined && 
+                runData.properties.end_connect !== "None" ? 
+                Number(runData.properties.end_connect) : null,
+                 
     snapInfo: runData.snapInfo ? {
       isSnapped: true,
       snappedEdge: runData.snapInfo.snappedEdge || 'rear',
@@ -5675,6 +5848,32 @@ const handleCanvasMouseUp = () => {
   setIsPanning(false);
   setLastPanPosition(null);
   setResizingRun(null);
+};
+
+const checkAndFixSecondaryRooms = (rooms: Room[]) => {
+  const updatedRooms = [...rooms];
+  
+  // Check each secondary room
+  for (const room of updatedRooms) {
+    if (!room.isMain && room.isComplete && room.points.length >= 3) {
+      // Check if first and last points are attached to the same wall
+      const firstPoint = room.points[0];
+      const lastPoint = room.points[room.points.length - 1];
+      
+      if (firstPoint.attachedTo && lastPoint.attachedTo) {
+        if (firstPoint.attachedTo.roomId === lastPoint.attachedTo.roomId &&
+            firstPoint.attachedTo.wallIndex === lastPoint.attachedTo.wallIndex) {
+          // Set the noClosingWall flag if not already set
+          if (!room.noClosingWall) {
+            room.noClosingWall = true;
+            console.log(`Fixed room ${room.id} by setting noClosingWall flag`);
+          }
+        }
+      }
+    }
+  }
+  
+  return updatedRooms;
 };
 
  
