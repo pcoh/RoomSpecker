@@ -1970,69 +1970,69 @@ const RoomDesigner: React.FC = () => {
   };
 
   // Calculate the optimal rotation to align with a wall (facing room interior)
-const calculateWallAlignment = (
-  wallStart: Point, 
-  wallEnd: Point,
-  roomId: string
-): number => {
-  // Wall angle (direction from start to end)
-  const wallAngle = Math.atan2(
-    wallEnd.y - wallStart.y,
-    wallEnd.x - wallStart.x
-  ) * (180 / Math.PI);
-  
-  // Get room centroid
-  const room = rooms.find(r => r.id === roomId);
-  if (!room || room.points.length < 3) {
-    // Default behavior if room not found or invalid
-    return (wallAngle + 180) % 360;
-  }
-  
-  const centroid = {
-    x: room.points.reduce((sum, p) => sum + p.x, 0) / room.points.length,
-    y: room.points.reduce((sum, p) => sum + p.y, 0) / room.points.length
+  const calculateWallAlignment = (
+    wallStart: Point, 
+    wallEnd: Point,
+    roomId: string
+  ): number => {
+    // Wall angle (direction from start to end)
+    const wallAngle = Math.atan2(
+      wallEnd.y - wallStart.y,
+      wallEnd.x - wallStart.x
+    ) * (180 / Math.PI);
+    
+    // Get room centroid
+    const room = rooms.find(r => r.id === roomId);
+    if (!room || room.points.length < 3) {
+      // Default behavior if room not found or invalid
+      return (wallAngle + 180) % 360;
+    }
+    
+    const centroid = {
+      x: room.points.reduce((sum, p) => sum + p.x, 0) / room.points.length,
+      y: room.points.reduce((sum, p) => sum + p.y, 0) / room.points.length
+    };
+    
+    // Wall midpoint
+    const wallMidpoint = {
+      x: (wallStart.x + wallEnd.x) / 2,
+      y: (wallStart.y + wallEnd.y) / 2
+    };
+    
+    // Vector from wall midpoint to centroid
+    const toInterior = {
+      x: centroid.x - wallMidpoint.x,
+      y: centroid.y - wallMidpoint.y
+    };
+    
+    // Wall normal (perpendicular to wall, counter-clockwise)
+    const wallVector = {
+      x: wallEnd.x - wallStart.x,
+      y: wallEnd.y - wallStart.y
+    };
+    
+    const normalVector = {
+      x: -wallVector.y,
+      y: wallVector.x
+    };
+    
+    // Determine if normal points toward interior or exterior
+    const dotProduct = toInterior.x * normalVector.x + toInterior.y * normalVector.y;
+    
+    // For the rear of cabinet to align with wall and front to face room interior:
+    // - If normal points toward interior (dotProduct > 0), cabinet should face opposite normal
+    // - If normal points toward exterior (dotProduct < 0), cabinet should face toward normal
+    let alignedAngle = wallAngle;
+    if (dotProduct > 0) {
+      // Normal points toward interior, so cabinet should face opposite
+      alignedAngle = (wallAngle + 180) % 360;
+    } else {
+      // Normal points away from interior, so cabinet should face toward normal
+      alignedAngle = wallAngle;
+    }
+    
+    return alignedAngle;
   };
-  
-  // Wall midpoint
-  const wallMidpoint = {
-    x: (wallStart.x + wallEnd.x) / 2,
-    y: (wallStart.y + wallEnd.y) / 2
-  };
-  
-  // Vector from wall midpoint to centroid
-  const toInterior = {
-    x: centroid.x - wallMidpoint.x,
-    y: centroid.y - wallMidpoint.y
-  };
-  
-  // Wall normal (perpendicular to wall, counter-clockwise)
-  const wallVector = {
-    x: wallEnd.x - wallStart.x,
-    y: wallEnd.y - wallStart.y
-  };
-  
-  const normalVector = {
-    x: -wallVector.y,
-    y: wallVector.x
-  };
-  
-  // Determine if normal points toward interior or exterior
-  const dotProduct = toInterior.x * normalVector.x + toInterior.y * normalVector.y;
-  
-  // For the rear of cabinet to align with wall and front to face room interior:
-  // - If normal points toward interior (dotProduct > 0), cabinet should face opposite normal
-  // - If normal points toward exterior (dotProduct < 0), cabinet should face toward normal
-  let alignedAngle = wallAngle;
-  if (dotProduct > 0) {
-    // Normal points toward interior, so cabinet should face opposite
-    alignedAngle = (wallAngle + 180) % 360;
-  } else {
-    // Normal points away from interior, so cabinet should face toward normal
-    alignedAngle = wallAngle;
-  }
-  
-  return alignedAngle;
-};
   
   // Check if a point is inside a cabinet run
   const isPointInRun = (point: Point, run: CabinetRun): boolean => {
@@ -2176,7 +2176,6 @@ const calculateWallAlignment = (
     return { shouldSnap: false };
   };
   
-  // Find the best wall to snap a run to
   const findBestWallSnapForRun = (run) => {
     if (!rooms.some(r => r.isComplete)) {
       return { shouldSnap: false };
@@ -2196,6 +2195,9 @@ const calculateWallAlignment = (
       newRotation: run.rotation_z
     };
     
+    // Get the current run's back wall direction (in degrees)
+    const runBackWallAngle = run.rotation_z;
+    
     // Check all completed rooms
     for (const room of rooms) {
       if (!room.isComplete || room.points.length < 3) continue;
@@ -2203,6 +2205,19 @@ const calculateWallAlignment = (
       for (let wallIndex = 0; wallIndex < room.points.length; wallIndex++) {
         const wallStart = room.points[wallIndex];
         const wallEnd = room.points[(wallIndex + 1) % room.points.length];
+        
+        // Calculate the optimal alignment for this wall
+        const optimalAngle = calculateWallAlignment(
+          wallStart, wallEnd, room.id
+        );
+        
+        // Check if run's current angle is within 25 degrees of the optimal angle
+        // We need to handle angles properly with wraparound
+        let angleDiff = Math.abs(runBackWallAngle - optimalAngle) % 360;
+        if (angleDiff > 180) angleDiff = 360 - angleDiff;
+        
+        // Only proceed if the angle difference is within our tolerance
+        if (angleDiff > 25) continue;
         
         // Use the rear edge of the cabinet
         const edge = edges[0];
@@ -2221,9 +2236,7 @@ const calculateWallAlignment = (
         // If this is closer than our current best and within threshold
         if (distance < bestSnap.snapDistance) {
           // Get optimal rotation to align with wall
-          const newRotation = calculateWallAlignment(
-            wallStart, wallEnd, room.id
-          );
+          const newRotation = optimalAngle;
           
           // Calculate how much we need to move to snap
           const dx = closestPoint.x - edgeMidpoint.x;
@@ -2250,7 +2263,6 @@ const calculateWallAlignment = (
           const wallLength = Math.sqrt(wallVector.x * wallVector.x + wallVector.y * wallVector.y);
           
           // Calculate distance from wall start to the REAR-LEFT corner of the cabinet
-          // Instead of center point, use the actual start_pos which is the rear-left corner
           const rearLeftToWallStart = {
             x: newX - wallStart.x,
             y: newY - wallStart.y
@@ -2601,7 +2613,7 @@ const calculateWallAlignment = (
     return bestSnap;
   };
   
-  // Calculate the snap position for a run during placement or dragging
+  // Modified calculateRunSnapPosition (unchanged from my previous response)
   const calculateRunSnapPosition = (
     mousePos: Point, 
     currentRotation: number, 
@@ -2624,12 +2636,14 @@ const calculateWallAlignment = (
       start_type: 'Open',
       end_type: 'Open',
       top_filler: false,
-      is_island: false
+      is_island: false,
+      omit_backsplash: false
     };
     
     // Find the best wall to snap to
     return findBestWallSnapForRun(tempRun);
   };
+
   // Updated event handler for type changes in cabinet run properties
   const handleRunTypeChange = (runId: string, newType: 'Base' | 'Upper') => {
     setCabinetRuns(prevRuns => prevRuns.map(run => {
@@ -6707,9 +6721,69 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
       if (wallLength === 0) continue;
       
       // Calculate the optimal rotation to align with the wall
-      const newRotation = calculateWallAlignment(
-        wallStart, wallEnd, roomId
-      );
+      const calculateWallAlignment = (
+        wallStart: Point, 
+        wallEnd: Point,
+        roomId: string
+      ): number => {
+        // Wall angle (direction from start to end)
+        const wallAngle = Math.atan2(
+          wallEnd.y - wallStart.y,
+          wallEnd.x - wallStart.x
+        ) * (180 / Math.PI);
+        
+        // Get room centroid
+        const room = rooms.find(r => r.id === roomId);
+        if (!room || room.points.length < 3) {
+          // Default behavior if room not found or invalid
+          return (wallAngle + 180) % 360;
+        }
+        
+        const centroid = {
+          x: room.points.reduce((sum, p) => sum + p.x, 0) / room.points.length,
+          y: room.points.reduce((sum, p) => sum + p.y, 0) / room.points.length
+        };
+        
+        // Wall midpoint
+        const wallMidpoint = {
+          x: (wallStart.x + wallEnd.x) / 2,
+          y: (wallStart.y + wallEnd.y) / 2
+        };
+        
+        // Vector from wall midpoint to centroid
+        const toInterior = {
+          x: centroid.x - wallMidpoint.x,
+          y: centroid.y - wallMidpoint.y
+        };
+        
+        // Wall normal (perpendicular to wall, counter-clockwise)
+        const wallVector = {
+          x: wallEnd.x - wallStart.x,
+          y: wallEnd.y - wallStart.y
+        };
+        
+        const normalVector = {
+          x: -wallVector.y,
+          y: wallVector.x
+        };
+        
+        // Determine if normal points toward interior or exterior
+        const dotProduct = toInterior.x * normalVector.x + toInterior.y * normalVector.y;
+        
+        // For the rear of cabinet to align with wall and front to face room interior:
+        // - If normal points toward interior (dotProduct > 0), cabinet should face opposite normal
+        // - If normal points toward exterior (dotProduct < 0), cabinet should face toward normal
+        let alignedAngle = wallAngle;
+        if (dotProduct > 0) {
+          // Normal points toward interior, so cabinet should face opposite
+          alignedAngle = (wallAngle + 180) % 360;
+        } else {
+          // Normal points away from interior, so cabinet should face toward normal
+          alignedAngle = wallAngle;
+        }
+        
+        return alignedAngle;
+      };
       
       // Get the current corners of the run
       const corners = calculateRunCorners(run);
