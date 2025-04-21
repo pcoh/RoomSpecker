@@ -4031,11 +4031,10 @@ const handleFileSelect = (event) => {
       const jsonContent = e.target.result;
       console.log("Raw JSON content length:", jsonContent.length);
       
-      // Log a preview of the content to debug
+      // Log a preview of the content for debugging
       console.log("JSON preview:", jsonContent.substring(0, 1000) + "...");
-      // console.log("JSON:", jsonContent)
       
-      // Ensure True/False are properly converted to true/false
+      // Ensure True/False are properly converted to true/false for JavaScript
       const fixedContent = jsonContent.replace(/True/g, 'true').replace(/False/g, 'false');
       
       const parsedData = JSON.parse(fixedContent);
@@ -4045,14 +4044,15 @@ const handleFileSelect = (event) => {
         return;
       }
       
-      // Additional logging to debug cabinet data
+      // Additional debugging for cabinet data
+      if (parsedData.projectData.cabinetRuns) {
+        console.log("Cabinet runs in JSON:", parsedData.projectData.cabinetRuns.length);
+        console.log("First cabinet run:", parsedData.projectData.cabinetRuns[0]);
+      }
+      
       if (parsedData.projectData.cabinets) {
-        console.log("Total cabinets in JSON:", parsedData.projectData.cabinets.length);
-        console.log("Cabinets for run 7:", parsedData.projectData.cabinets.filter(c => c.cabinet_run_id === 7));
-        
-        // Check if there are higher cab IDs than shown
-        const cabIds = parsedData.projectData.cabinets.map(c => c.id);
-        console.log("All cabinet IDs:", cabIds);
+        console.log("Cabinets in JSON:", parsedData.projectData.cabinets.length);
+        console.log("First cabinet:", parsedData.projectData.cabinets[0]);
       }
       
       // Load the data into the application
@@ -4093,8 +4093,40 @@ const loadProjectData = (projectData) => {
       }
     }
     
-    // Rest of the function remains unchanged
-    // ...
+    // Load cabinet runs 
+    if (projectData.cabinetRuns && Array.isArray(projectData.cabinetRuns)) {
+      const loadedRuns = projectData.cabinetRuns.map(runData => parseCabinetRunData(runData));
+      setCabinetRuns(loadedRuns);
+    }
+    
+    // Load cabinets
+    if (projectData.cabinets && Array.isArray(projectData.cabinets)) {
+      const loadedCabinets = projectData.cabinets.map(cabinetData => parseCabinetData(cabinetData));
+      setCabinets(loadedCabinets);
+      
+      // Set custom depth flag for any run with non-default depth
+      const customDepths = {};
+      loadedCabinets.forEach(cabinet => {
+        const run = projectData.cabinetRuns.find(r => r.id === cabinet.cabinet_run_id);
+        if (run) {
+          const defaultDepth = run.type === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER;
+          if (Math.abs(run.dimensions.depth - defaultDepth) > 1) {
+            customDepths[run.id] = true;
+          }
+        }
+      });
+      setCustomDepthRuns(customDepths);
+    }
+    
+    // Load camera if present
+    if (projectData.camera) {
+      setCamera(parseCameraData(projectData.camera));
+    }
+    
+    // Load focal point if present
+    if (projectData.focalPoint) {
+      setFocalPoint(parseFocalPointData(projectData.focalPoint));
+    }
   } catch (error) {
     console.error('Error loading project data:', error);
     alert('Error loading project data: ' + error.message);
@@ -4378,14 +4410,35 @@ const verifyAndUpdateAttachments = (rooms: Room[]): Room[] => {
 };
 
 const parseCabinetRunData = (runData) => {
-  // Create the base cabinet run object with defaults for new properties
+  // Ensure position and dimensions are correctly handled
+  const startPosX = runData.position?.x !== undefined ? runData.position.x : 0;
+  const startPosY = runData.position?.y !== undefined ? runData.position.y : 0;
+  const length = runData.dimensions?.length !== undefined ? runData.dimensions.length : DEFAULT_RUN_LENGTH;
+  const depth = runData.dimensions?.depth !== undefined ? runData.dimensions.depth : 
+               (runData.type === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER);
+  
+  // Process snapInfo
+  let snapInfo = undefined;
+  if (runData.snapInfo) {
+    const roomId = runData.snapInfo.snappedToWall?.roomId === 0 ? 'main' : `room-${runData.snapInfo.snappedToWall?.roomId}`;
+    snapInfo = {
+      isSnapped: true,
+      snappedEdge: runData.snapInfo.snappedEdge || 'rear',
+      snappedToWall: {
+        roomId: roomId,
+        wallIndex: runData.snapInfo.snappedToWall?.wallIndex || 0,
+        distanceFromStart: runData.snapInfo.snappedToWall?.distanceFromStart || 0
+      }
+    };
+  }
+  
+  // Create the base cabinet run object
   return {
-    id: runData.id,
-    start_pos_x: runData.position?.x || 0,
-    start_pos_y: runData.position?.y || 0,
-    length: runData.dimensions?.length || DEFAULT_RUN_LENGTH,
-    depth: runData.dimensions?.depth || 
-           (runData.type === 'Base' ? DEFAULT_RUN_DEPTH_BASE : DEFAULT_RUN_DEPTH_UPPER),
+    id: Number(runData.id),  // Ensure ID is a number
+    start_pos_x: startPosX,
+    start_pos_y: startPosY,
+    length: length,
+    depth: depth,
     rotation_z: runData.rotation_z || 0,
     type: runData.type || 'Base',
     start_type: runData.properties?.start_type || 'Open',
@@ -4394,53 +4447,33 @@ const parseCabinetRunData = (runData) => {
     is_island: runData.properties?.is_island || false,
     omit_backsplash: runData.properties?.omit_backsplash || false,
     
-    // Set default null values for our new connection properties
-    // This ensures they exist even if they weren't in the original JSON
-    start_connect: runData.properties?.start_connect !== undefined && 
-                  runData.properties.start_connect !== "None" ? 
-                  Number(runData.properties.start_connect) : null,
-    end_connect: runData.properties?.end_connect !== undefined && 
-                runData.properties.end_connect !== "None" ? 
-                Number(runData.properties.end_connect) : null,
+    // Handle connections - could be "None" string in the JSON
+    start_connect: typeof runData.properties?.start_connect === 'number' ? 
+                   Number(runData.properties?.start_connect) : null,
+    end_connect: typeof runData.properties?.end_connect === 'number' ? 
+                 Number(runData.properties?.end_connect) : null,
                  
-    snapInfo: runData.snapInfo ? {
-      isSnapped: true,
-      snappedEdge: runData.snapInfo.snappedEdge || 'rear',
-      snappedToWall: {
-        roomId: runData.snapInfo.snappedToWall?.roomId === 0 ? 'main' : `room-${runData.snapInfo.snappedToWall?.roomId}`,
-        wallIndex: runData.snapInfo.snappedToWall?.wallIndex || 0,
-        distanceFromStart: runData.snapInfo.snappedToWall?.distanceFromStart || 0
-      }
-    } : undefined
+    snapInfo: snapInfo
   };
 };
 
 // Function to parse cabinet data from JSON
 const parseCabinetData = (cabinetData) => {
-  // Deep clone the cabinet data to avoid reference issues
-  const cleanData = JSON.parse(JSON.stringify(cabinetData));
-  
-  // Ensure cabinet_run_id is properly parsed as a number
-  const cabinet = {
-    id: cleanData.id || "",
-    cabinet_run_id: Number(cleanData.cabinet_run_id), // Force conversion to number
-    cabinet_type: cleanData.cabinet_type || 'Base - 2-Drawer',
-    cabinet_width: Number(cleanData.cabinet_width) || 600,
-    hinge_right: Boolean(cleanData.hinge_right),
-    material_doors: cleanData.material_doors || 'WhiteOak_SlipMatch',
-    position: Number(cleanData.position) || 0,
-    floating_shelf_depth: Number(cleanData.floating_shelf_depth) || 200,
-    floating_shelf_height: Number(cleanData.floating_shelf_height) || 100,
-    floating_shelf_num: Number(cleanData.floating_shelf_num) || 1,
-    floating_shelf_vert_spacing: Number(cleanData.floating_shelf_vert_spacing) || 350
+  // Ensure numeric properties are properly converted
+  return {
+    id: cabinetData.id || "",
+    cabinet_run_id: Number(cabinetData.cabinet_run_id), // Force conversion to number
+    cabinet_type: cabinetData.cabinet_type || 'Base - 2-Drawer',
+    cabinet_width: Number(cabinetData.cabinet_width) || 600,
+    hinge_right: Boolean(cabinetData.hinge_right),
+    material_doors: cabinetData.material_doors || 'WhiteOak_SlipMatch',
+    position: Number(cabinetData.position) || 0,
+    // Add default values for floating shelf parameters if needed
+    floating_shelf_depth: Number(cabinetData.floating_shelf_depth) || 200,
+    floating_shelf_height: Number(cabinetData.floating_shelf_height) || 100,
+    floating_shelf_num: Number(cabinetData.floating_shelf_num) || 1,
+    floating_shelf_vert_spacing: Number(cabinetData.floating_shelf_vert_spacing) || 350
   };
-  
-  // Log individual cabinet parsing to identify issues
-  if (cabinet.cabinet_run_id === 7) {
-    console.log("Parsing cabinet for run 7:", cabinet);
-  }
-  
-  return cabinet;
 };
 
 // Function to parse camera data from JSON
