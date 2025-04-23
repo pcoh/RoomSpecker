@@ -282,7 +282,11 @@ const RoomDesigner: React.FC = () => {
   } | null>(null);
   const [isAddingFocalPoint, setIsAddingFocalPoint] = useState(false);
   const [projectAddress, setProjectAddress] = useState<string>("");
+  // const [editingCabinetWidths, setEditingCabinetWidths] = useState<{ [key: string]: string }>({});
+  // const [editingNewCabinetWidth, setEditingNewCabinetWidth] = useState(null);
+  const [editingNewCabinetWidth, setEditingNewCabinetWidth] = useState('');
   const [editingCabinetWidths, setEditingCabinetWidths] = useState<{ [key: string]: string }>({});
+
 
 
 
@@ -3204,7 +3208,11 @@ const addCabinetToRun = (runId) => {
   // Determine the appropriate width based on cabinet type
   const fixedWidth = getFixedCabinetWidth(cabinetType);
   const minWidth = getMinCabinetWidth(cabinetType);
-  const width = fixedWidth !== null ? fixedWidth : Math.max(minWidth, newCabinetWidth);
+  
+  // If editingNewCabinetWidth has a value and the cabinet type doesn't have a fixed width,
+  // use that value (subject to minimum constraints). Otherwise use the current newCabinetWidth.
+  const width = fixedWidth !== null ? fixedWidth : 
+                Math.max(minWidth, newCabinetWidth);
   
   // Create a new cabinet with cab prefix and numeric suffix
   const highestId = cabinets.length > 0 
@@ -6653,34 +6661,44 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
   };
 
   const handleCabinetTypeChange = (newType) => {
-    // Get the fixed width for this cabinet type if it has one
+    // Get the fixed width for this cabinet type
     const fixedWidth = getFixedCabinetWidth(newType);
     
-    // Get the minimum width for this cabinet type
-    const minWidth = getMinCabinetWidth(newType);
+    // Update the cabinet type
+    setNewCabinetType(newType);
     
-    // Set new width based on constraints
-    let newWidth;
-    
-    // If this cabinet type has a fixed width, use that
+    // If this cabinet type has a fixed width, update the width immediately
     if (fixedWidth !== null) {
-      newWidth = fixedWidth;
-    } 
-    // Otherwise, use the larger of the minimum width or current width
-    else {
-      newWidth = Math.max(minWidth, newCabinetWidth);
+      setNewCabinetWidth(fixedWidth);
+      setEditingNewCabinetWidth(null); // Clear editing state
+    }
+    
+    console.log(`Cabinet type changed to ${newType}`);
+  };
+  
+  // New handler for width changes in the add cabinet form
+  const handleNewCabinetWidthChange = (value) => {
+    setEditingNewCabinetWidth(value);
+  };
+
+  const handleNewCabinetWidthBlur = () => {
+    if (editingNewCabinetWidth !== '') {
+      // Get constraints for the current cabinet type
+      const fixedWidth = getFixedCabinetWidth(newCabinetType);
+      const minWidth = getMinCabinetWidth(newCabinetType);
       
-      // If current width is less than minimum, use the minimum
-      if (newCabinetWidth < minWidth) {
-        newWidth = minWidth;
+      // Don't validate if this cabinet type has a fixed width
+      if (fixedWidth !== null) {
+        setNewCabinetWidth(fixedWidth);
+      } else {
+        // Apply minimum width constraint
+        const newWidth = Math.max(minWidth, Number(editingNewCabinetWidth));
+        setNewCabinetWidth(newWidth);
       }
     }
     
-    // Update the cabinet type and width
-    setNewCabinetType(newType);
-    setNewCabinetWidth(newWidth);
-    
-    console.log(`Cabinet type changed to ${newType}, width set to ${newWidth}mm (minimum: ${minWidth}mm)`);
+    // Clear the editing state
+    setEditingNewCabinetWidth('');
   };
 
   
@@ -8758,12 +8776,13 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                           <label className="text-sm font-medium">Width (mm)</label>
                           <input
                             type="number"
-                            value={newCabinetWidth}
-                            onChange={(e) => {
-                              // Apply minimum width constraint when changing the value
-                              const minWidth = getMinCabinetWidth(newCabinetType || '');
-                              const validatedWidth = Math.max(minWidth, Number(e.target.value));
-                              setNewCabinetWidth(validatedWidth);
+                            value={editingNewCabinetWidth !== '' ? editingNewCabinetWidth : newCabinetWidth}
+                            onChange={(e) => handleNewCabinetWidthChange(e.target.value)}
+                            onBlur={handleNewCabinetWidthBlur}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.target.blur(); // Trigger onBlur to apply the change
+                              }
                             }}
                             className="p-2 border border-gray-300 rounded"
                             min={getMinCabinetWidth(newCabinetType || '')}
