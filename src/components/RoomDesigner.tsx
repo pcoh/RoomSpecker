@@ -306,7 +306,7 @@ const RoomDesigner: React.FC = () => {
         height: 2438, // Default height in mm
         wall_thickness: 200, // Default wall thickness in mm
         wall_material: "Simple Wall Shader", // Default wall material
-        floor_material: "WoodFlooring_1", // Default floor material
+        floor_material: "Laminate_Standard", // Default floor material
         ceiling_material: "Simple Wall Shader" // Default ceiling material
       };
       setRooms([mainRoom]);
@@ -9312,11 +9312,23 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                 onChange={(e) => handleFloorMaterialChange(activeRoom.id, e.target.value)}
                 className="w-48 px-2 py-1 border border-gray-300 rounded"
               >
-                <option value="WoodFlooring_1">Wood Flooring 1</option>
-                {/* <option value="WoodFlooring_2">Wood Flooring 2</option>
-                <option value="Tile">Tile</option>
-                <option value="Carpet">Carpet</option>
-                <option value="Concrete">Concrete</option> */}
+                <option value="Laminate_Standard">Laminate Standard</option>
+                <option value="Wood_Ash_Ebony">Wood Ash Ebony</option>
+                <option value="Wood_Ash_Ebony_Herringbone">Wood Ash Ebony Herringbone</option>
+                <option value="Wood_Ash_Light">Wood Ash Light</option>
+                <option value="Wood_Hazel">Wood Hazel</option>
+                <option value="Wood_Mahogany_AfricanSanded">Wood Mahogany African Sanded</option>
+                <option value="Wood_Oak_Cognac_BrickBond">Wood Oak Cognac Brick Bond</option>
+                <option value="Wood_Oak_LightBrown_BrickBond">Wood Oak Light Brown Brick Bond</option>
+                <option value="Wood_Oak_LightBrown_Chevron">Wood Oak Light Brown Chevron</option>
+                <option value="Wood_Oak_Smoked">Wood Oak Smoked</option>
+                <option value="Wood_Oak_Smoked_Herringbone">Wood Oak Smoked Herringbone</option>
+                <option value="Wood_Oak_WarmBrown">Wood Oak Warm Brown</option>
+                <option value="Wood_Oak_White">Wood Oak White</option>
+                <option value="Wood_Pine_Natural">Wood Pine Natural</option>
+                <option value="Wood_Walnut_Dark_Chevron">Wood Walnut Dark Chevron</option>
+                <option value="Wood_Walnut_Muted">Wood Walnut Muted</option>
+                <option value="Wood_Walnut_Natural">Wood Walnut Natural</option>
               </select>
             </div>
       
