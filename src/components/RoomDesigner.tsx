@@ -3226,7 +3226,7 @@ const addCabinetToRun = (runId) => {
     cabinet_type: cabinetType,
     cabinet_width: width,
     hinge_right: newCabinetHingeRight,
-    material_doors: newCabinetMaterial,
+    material_doors: newCabinetMaterial || "WhiteOak_Basic_SlipMatch",
     position: position,
     // Add default values for floating shelf parameters
     floating_shelf_depth: 200,
@@ -8800,11 +8800,17 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                             onChange={(e) => setNewCabinetMaterial(e.target.value)}
                             className="p-2 border border-gray-300 rounded"
                           >
-                            <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                            <option value="Paint - Gray">Paint - Gray</option>
+                            <option value="PaintGrade">Paint Grade</option>
+                            <option value="Walnut_Muted_BookMatch">Walnut Muted Book Match</option>
+                            <option value="Walnut_Natural_BookMatch">Walnut Natural Book Match</option>
+                            <option value="Walnut_Roasted_BookMatch">Walnut Roasted Book Match</option>
+                            <option value="WhiteOak_Basic_SlipMatch">White Oak Basic Slip Match</option>
+                            <option value="WhiteOak_FineDark_RandomMatch">White Oak Fine Dark Random Match</option>
+                            <option value="WhiteOak_Muted_SlipMatch">White Oak Muted Slip Match</option>
+                            <option value="WhiteOak_RandomMatchTiger">White Oak Random Match Tiger</option>
+                            <option value="WhiteOak_Whitened_SlipMatch">White Oak Whitened Slip Match</option>
                           </select>
-                        </div>
-                        
+                        </div>                        
                         <div className="flex items-center gap-2">
                           <label className="text-sm font-medium">Hinge Right</label>
                           <input
@@ -8904,8 +8910,15 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                                 onChange={(e) => updateCabinetProperty(cabinet.id, 'material_doors', e.target.value)}
                                 className="w-full px-2 py-1 border border-gray-300 rounded"
                               >
-                                <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                                <option value="Paint - Gray">Paint - Gray</option>
+                                <option value="PaintGrade">Paint Grade</option>
+                                <option value="Walnut_Muted_BookMatch">Walnut Muted Book Match</option>
+                                <option value="Walnut_Natural_BookMatch">Walnut Natural Book Match</option>
+                                <option value="Walnut_Roasted_BookMatch">Walnut Roasted Book Match</option>
+                                <option value="WhiteOak_Basic_SlipMatch">White Oak Basic Slip Match</option>
+                                <option value="WhiteOak_FineDark_RandomMatch">White Oak Fine Dark Random Match</option>
+                                <option value="WhiteOak_Muted_SlipMatch">White Oak Muted Slip Match</option>
+                                <option value="WhiteOak_RandomMatchTiger">White Oak Random Match Tiger</option>
+                                <option value="WhiteOak_Whitened_SlipMatch">White Oak Whitened Slip Match</option>
                               </select>
                             </td>
                             <td className="px-4 py-2 whitespace-nowrap text-sm">
