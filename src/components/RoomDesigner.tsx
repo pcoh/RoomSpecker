@@ -305,9 +305,9 @@ const RoomDesigner: React.FC = () => {
         isMain: true,
         height: 2438, // Default height in mm
         wall_thickness: 200, // Default wall thickness in mm
-        wall_material: "Simple Wall Shader", // Default wall material
+        wall_material: "Simple Wall Material", // Default wall material
         floor_material: "Laminate_Standard", // Default floor material
-        ceiling_material: "Simple Wall Shader" // Default ceiling material
+        ceiling_material: "Simple Wall Material" // Default ceiling material
       };
       setRooms([mainRoom]);
       setActiveRoomId('main');
@@ -4114,9 +4114,9 @@ const parseRoomData = (roomData) => {
     isMain: roomData.isMain,
     height: roomData.height || 2438,
     wall_thickness: roomData.wall_thickness || 200,
-    wall_material: roomData.wall_material || "Simple Wall Shader",
+    wall_material: roomData.wall_material || "Simple Wall Material",
     floor_material: roomData.floor_material || "WoodFlooring_1",
-    ceiling_material: roomData.ceiling_material || "Simple Wall Shader",
+    ceiling_material: roomData.ceiling_material || "Simple Wall Material",
     noClosingWall: roomData.noClosingWall || false
   };
   
@@ -6246,9 +6246,9 @@ const startAddingSecondaryRoom = () => {
     isMain: false,
     height: 2438, // Default height in mm
     wall_thickness: 200, // Default wall thickness in mm
-    wall_material: "Simple Wall Shader", // Default wall material
+    wall_material: "Simple Wall Material", // Default wall material
     floor_material: "WoodFlooring_1", // Default floor material
-    ceiling_material: "Simple Wall Shader" // Default ceiling material
+    ceiling_material: "Simple Wall Material" // Default ceiling material
   };
   
   setRooms([...rooms, newRoom]);
@@ -9309,7 +9309,7 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                 onChange={(e) => handleWallMaterialChange(activeRoom.id, e.target.value)}
                 className="w-48 px-2 py-1 border border-gray-300 rounded"
               >
-                <option value="Simple Wall Shader">Simple Wall Shader</option>
+                <option value="Simple Wall Material">Simple Wall Material</option>
                 {/* <option value="Plaster">Plaster</option>
                 <option value="Concrete">Concrete</option>
                 <option value="Brick">Brick</option>
@@ -9353,7 +9353,7 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                 onChange={(e) => handleCeilingMaterialChange(activeRoom.id, e.target.value)}
                 className="w-48 px-2 py-1 border border-gray-300 rounded"
               >
-                <option value="Simple Wall Shader">Simple Wall Shader</option>
+                <option value="Simple Wall Material">Simple Wall Material</option>
                 {/* <option value="Plaster">Plaster</option>
                 <option value="Wood Paneling">Wood Paneling</option>
                 <option value="Acoustic Tile">Acoustic Tile</option> */}
