@@ -270,10 +270,12 @@ const RoomDesigner: React.FC = () => {
   const [editingCeilingMaterial, setEditingCeilingMaterial] = useState<{ [key: string]: string }>({});
   const [isAddingCamera, setIsAddingCamera] = useState(false);
   const [camera, setCamera] = useState<{
-    position: Point;
+    position: Point; // X,Y coordinates
     rotation: number;
     isDragging: boolean;
     isRotating: boolean;
+    focalLength: number; // Focal length in mm
+    height: number; // Z position in mm
   } | null>(null);
   const [focalPoint, setFocalPoint] = useState<{
     position: Point;
@@ -1266,12 +1268,12 @@ const RoomDesigner: React.FC = () => {
       alert('Please complete the main room first');
       return;
     }
-
+  
     // Add this check to prevent adding a camera if one already exists
     if (camera !== null) {
       alert('Camera already exists. You can adjust its properties below.');
-    return;
-  }
+      return;
+    }
     
     setIsAddingCamera(true);
   };
@@ -1281,7 +1283,9 @@ const RoomDesigner: React.FC = () => {
       position,
       rotation: 0,
       isDragging: false,
-      isRotating: false
+      isRotating: false,
+      focalLength: 24,
+      height: 1700
     };
     
     // Update the camera state
@@ -1301,6 +1305,30 @@ const RoomDesigner: React.FC = () => {
       }
     }
   };
+
+  const updateCameraFocalLength = (newFocalLength: number) => {
+    if (camera && newFocalLength > 0) {
+      setCamera({
+        ...camera,
+        focalLength: newFocalLength
+      });
+      
+      // Force an immediate redraw
+      drawRoom();
+    }
+  };
+  
+  const updateCameraHeight = (newHeight: number) => {
+    if (camera && newHeight > 0) {
+      setCamera({
+        ...camera,
+        height: newHeight
+      });
+      
+      // Force an immediate redraw
+      drawRoom();
+    }
+  };
   
   const updateCameraPosition = (position: Point) => {
     if (camera) {
@@ -1315,7 +1343,9 @@ const RoomDesigner: React.FC = () => {
           position: position,
           rotation: ((angle % 360) + 360) % 360,
           isDragging: camera.isDragging,
-          isRotating: camera.isRotating
+          isRotating: camera.isRotating,
+          focalLength: camera.focalLength !== undefined ? camera.focalLength : 24,
+          height: camera.height !== undefined ? camera.height : 1700
         });
       } else {
         // If no focal point, just update position
@@ -3832,9 +3862,11 @@ const formatCameraData = (camera) => {
   return {
     position: {
       x: Math.round(camera.position.x),
-      y: Math.round(camera.position.y)
+      y: Math.round(camera.position.y),
+      z: Math.round(camera.height || 1700) // Include height as z coordinate
     },
-    rotation: Math.round(camera.rotation)
+    rotation: Math.round(camera.rotation),
+    focalLength: Math.round(camera.focalLength || 24) // Include focal length
   };
 };
 
@@ -4443,6 +4475,8 @@ const parseCameraData = (cameraData) => {
       y: cameraData.position?.y || 0
     },
     rotation: cameraData.rotation || 0,
+    focalLength: cameraData.focalLength || 24, // Parse focal length with default
+    height: cameraData.position?.z || 1700, // Get height from position.z with default
     isDragging: false,
     isRotating: false
   };
@@ -7033,7 +7067,14 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     }
   };
   
-  const drawCamera = (ctx: CanvasRenderingContext2D, camera: { position: Point; rotation: number; isDragging: boolean; isRotating: boolean }) => {
+  const drawCamera = (ctx: CanvasRenderingContext2D, camera: { 
+    position: Point; 
+    rotation: number; 
+    isDragging: boolean; 
+    isRotating: boolean;
+    focalLength?: number;
+    height?: number;
+  }) => {
     // Convert camera position to screen coordinates
     const screenPos = worldToScreen(camera.position.x, camera.position.y);
     
@@ -7063,10 +7104,17 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     ctx.lineWidth = 2;
     ctx.stroke();
     
+    // Get focal length with default
+    const focalLength = camera.focalLength !== undefined ? camera.focalLength : 24; 
+    const cameraHeight = camera.height !== undefined ? camera.height : 1700;
+    
     // Use a fixed screen size for the frustum that doesn't depend on scale
     // This ensures consistent size regardless of zoom level
     const frustumWidth = 30; // Fixed screen pixels, not world units
-    const frustumAngle = 30; // Degrees
+    
+    // Adjust frustum angle based on focal length - wider angle for shorter focal lengths
+    // This is a simplified approximation: narrower FOV for longer focal lengths  
+    const frustumAngle = 50 * (24 / focalLength); // Adjust angle based on focal length
     
     // Calculate opposite direction (toward camera) by adding 180° to the camera rotation
     const oppositeRotationRad = ((-camera.rotation + 180) * Math.PI) / 180;
@@ -7092,12 +7140,12 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     ctx.lineWidth = 1;
     ctx.stroke();
     
-    // Draw camera label
+    // Draw camera label with focal length and height
     ctx.font = '12px Arial';
     ctx.fillStyle = '#000';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('Camera', screenPos.x, screenPos.y - POINT_RADIUS * 2);
+    ctx.fillText(`Camera (${focalLength}mm, h:${cameraHeight}mm)`, screenPos.x, screenPos.y - POINT_RADIUS * 2);
   }
 
   const drawFocalPoint = (ctx: CanvasRenderingContext2D, focalPoint: { position: Point; isDragging: boolean }) => {
@@ -9551,6 +9599,35 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                         </button>
                       </div>
                     )}
+                  </td>
+                </tr>
+                {/* New rows for focal length and height */}
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Focal Length (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(camera.focalLength || 24)}
+                      onChange={(e) => updateCameraFocalLength(Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      min="1"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Height (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(camera.height || 1700)}
+                      onChange={(e) => updateCameraHeight(Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      min="0"
+                    />
                   </td>
                 </tr>
               </tbody>
