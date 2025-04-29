@@ -1313,7 +1313,7 @@ const RoomDesigner: React.FC = () => {
         focalLength: newFocalLength
       });
       
-      // Force an immediate redraw
+      // Force an immediate redraw to update the FOV cone
       drawRoom();
     }
   };
@@ -7056,16 +7056,16 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     drawRooms(ctx);
     drawCabinetRuns(ctx, canvas);
     
-    // Draw camera if it exists
-    if (camera) {
-      drawCamera(ctx, camera);
-    }
-    
-    // Draw focal point if it exists
+    // Draw focal point if it exists first (so it's behind the FOV cone)
     if (focalPoint) {
       drawFocalPoint(ctx, focalPoint);
     }
-  };
+    
+    // Draw camera and FOV cone if it exists
+    if (camera) {
+      drawCamera(ctx, camera);
+    }
+  }
   
   const drawCamera = (ctx: CanvasRenderingContext2D, camera: { 
     position: Point; 
@@ -7108,6 +7108,63 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     const focalLength = camera.focalLength !== undefined ? camera.focalLength : 24; 
     const cameraHeight = camera.height !== undefined ? camera.height : 1700;
     
+    // Calculate FOV angle using the formula FOV = 2 × arctan(sensor size / (2 × focal length))
+    const sensorSize = 28; // 28mm sensor size
+    const fovAngle = 2 * Math.atan(sensorSize / (2 * focalLength)) * (180 / Math.PI);
+    
+    // Draw FOV cone
+    const coneLength = 3000; // Length of the FOV cone in mm
+    const coneAngleRad = (fovAngle * Math.PI) / 180;
+    const rotationRad = (camera.rotation * Math.PI) / 180;
+    
+    // Calculate FOV edges in world coordinates
+    const leftEdgeAngle = rotationRad - coneAngleRad / 2;
+    const rightEdgeAngle = rotationRad + coneAngleRad / 2;
+    
+    const leftEdgePoint = {
+      x: camera.position.x + Math.cos(leftEdgeAngle) * coneLength,
+      y: camera.position.y + Math.sin(leftEdgeAngle) * coneLength
+    };
+    
+    const rightEdgePoint = {
+      x: camera.position.x + Math.cos(rightEdgeAngle) * coneLength,
+      y: camera.position.y + Math.sin(rightEdgeAngle) * coneLength
+    };
+    
+    // Convert to screen coordinates
+    const leftEdgeScreen = worldToScreen(leftEdgePoint.x, leftEdgePoint.y);
+    const rightEdgeScreen = worldToScreen(rightEdgePoint.x, rightEdgePoint.y);
+    
+    // Draw FOV cone
+    ctx.beginPath();
+    ctx.moveTo(screenPos.x, screenPos.y);
+    ctx.lineTo(leftEdgeScreen.x, leftEdgeScreen.y);
+    ctx.lineTo(rightEdgeScreen.x, rightEdgeScreen.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.15)'; // Light blue with low opacity
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Draw FOV angle indicator
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#3b82f6';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const angleTextPos = worldToScreen(
+      camera.position.x + Math.cos(rotationRad) * (coneLength / 4),
+      camera.position.y + Math.sin(rotationRad) * (coneLength / 4)
+    );
+    ctx.fillText(`FOV: ${Math.round(fovAngle)}°`, angleTextPos.x, angleTextPos.y);
+    
+    // Draw camera label with focal length and height
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`Camera (${focalLength}mm, h:${cameraHeight}mm)`, screenPos.x, screenPos.y - POINT_RADIUS * 2);
+    
     // Use a fixed screen size for the frustum that doesn't depend on scale
     // This ensures consistent size regardless of zoom level
     const frustumWidth = 30; // Fixed screen pixels, not world units
@@ -7118,15 +7175,15 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     
     // Calculate opposite direction (toward camera) by adding 180° to the camera rotation
     const oppositeRotationRad = ((-camera.rotation + 180) * Math.PI) / 180;
-    const leftEdgeAngle = oppositeRotationRad - (frustumAngle / 2) * Math.PI / 180;
-    const rightEdgeAngle = oppositeRotationRad + (frustumAngle / 2) * Math.PI / 180;
+    const leftEdgeAngleF = oppositeRotationRad - (frustumAngle / 2) * Math.PI / 180;
+    const rightEdgeAngleF = oppositeRotationRad + (frustumAngle / 2) * Math.PI / 180;
     
     // Calculate frustum points (pointing toward camera) in screen coordinates
-    const leftX = rotationHandleScreen.x + Math.cos(leftEdgeAngle) * frustumWidth;
-    const leftY = rotationHandleScreen.y + Math.sin(leftEdgeAngle) * frustumWidth;
+    const leftX = rotationHandleScreen.x + Math.cos(leftEdgeAngleF) * frustumWidth;
+    const leftY = rotationHandleScreen.y + Math.sin(leftEdgeAngleF) * frustumWidth;
     
-    const rightX = rotationHandleScreen.x + Math.cos(rightEdgeAngle) * frustumWidth;
-    const rightY = rotationHandleScreen.y + Math.sin(rightEdgeAngle) * frustumWidth;
+    const rightX = rotationHandleScreen.x + Math.cos(rightEdgeAngleF) * frustumWidth;
+    const rightY = rotationHandleScreen.y + Math.sin(rightEdgeAngleF) * frustumWidth;
     
     // Draw frustum (triangle) as rotation handle
     ctx.beginPath();
@@ -7139,13 +7196,6 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     ctx.strokeStyle = camera.isRotating ? '#dc2626' : '#3b82f6';
     ctx.lineWidth = 1;
     ctx.stroke();
-    
-    // Draw camera label with focal length and height
-    ctx.font = '12px Arial';
-    ctx.fillStyle = '#000';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(`Camera (${focalLength}mm, h:${cameraHeight}mm)`, screenPos.x, screenPos.y - POINT_RADIUS * 2);
   }
 
   const drawFocalPoint = (ctx: CanvasRenderingContext2D, focalPoint: { position: Point; isDragging: boolean }) => {
@@ -9614,6 +9664,20 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                       className="w-24 px-2 py-1 border border-gray-300 rounded"
                       min="1"
                     />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Field of View (°)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {(() => {
+                      const focalLength = camera.focalLength || 24;
+                      const sensorSize = 28; // 28mm sensor size
+                      const fovAngle = 2 * Math.atan(sensorSize / (2 * focalLength)) * (180 / Math.PI);
+                      return Math.round(fovAngle);
+                    })()}
+                    <span className="ml-2 text-gray-400">(Calculated from focal length)</span>
                   </td>
                 </tr>
                 <tr>
