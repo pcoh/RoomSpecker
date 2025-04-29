@@ -276,6 +276,7 @@ const RoomDesigner: React.FC = () => {
     isRotating: boolean;
     focalLength: number; // Focal length in mm
     height: number; // Z position in mm
+    shiftY: number; // New property for vertical shift
   } | null>(null);
   const [focalPoint, setFocalPoint] = useState<{
     position: Point;
@@ -1285,24 +1286,57 @@ const RoomDesigner: React.FC = () => {
       isDragging: false,
       isRotating: false,
       focalLength: 24,
-      height: 1700
+      height: 1700,
+      shiftY: -0.2 // Default value for shiftY
     };
     
-    // Update the camera state
     setCamera(newCamera);
     setIsAddingCamera(false);
     
-    // Force immediate redraw by directly manipulating the canvas
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        // Draw everything first
-        drawRoom();
+    // Force immediate redraw
+    drawRoom();
+  };
+
+    
+  const updateCameraPosition = (position: Point) => {
+    if (camera) {
+      // If focal point exists, calculate rotation to point toward it
+      if (focalPoint) {
+        const dx = focalPoint.position.x - position.x;
+        const dy = focalPoint.position.y - position.y;
+        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
         
-        // Then explicitly draw the camera again to ensure it appears
-        drawCamera(ctx, newCamera);
+        setCamera({
+          position: position,
+          rotation: ((angle % 360) + 360) % 360,
+          isDragging: camera.isDragging,
+          isRotating: camera.isRotating,
+          focalLength: camera.focalLength !== undefined ? camera.focalLength : 24,
+          height: camera.height !== undefined ? camera.height : 1700,
+          shiftY: camera.shiftY !== undefined ? camera.shiftY : -0.2 // Preserve shiftY
+        });
+      } else {
+        // If no focal point, just update position
+        setCamera({
+          ...camera,
+          position: position
+        });
       }
+      
+      // Force an immediate redraw
+      drawRoom();
+    }
+  };
+
+  const updateCameraHeight = (newHeight: number) => {
+    if (camera && newHeight > 0) {
+      setCamera({
+        ...camera,
+        height: newHeight
+      });
+      
+      // Force an immediate redraw
+      drawRoom();
     }
   };
 
@@ -1318,49 +1352,17 @@ const RoomDesigner: React.FC = () => {
     }
   };
   
-  const updateCameraHeight = (newHeight: number) => {
-    if (camera && newHeight > 0) {
+  const updateCameraShiftY = (newShiftY: number) => {
+    if (camera) {
       setCamera({
         ...camera,
-        height: newHeight
+        shiftY: newShiftY // No restrictions on value
       });
       
       // Force an immediate redraw
       drawRoom();
     }
   };
-  
-  const updateCameraPosition = (position: Point) => {
-    if (camera) {
-      // If focal point exists, calculate rotation to point toward it
-      if (focalPoint) {
-        const dx = focalPoint.position.x - position.x;
-        const dy = focalPoint.position.y - position.y;
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-        
-        // Update camera with all required properties
-        setCamera({
-          position: position,
-          rotation: ((angle % 360) + 360) % 360,
-          isDragging: camera.isDragging,
-          isRotating: camera.isRotating,
-          focalLength: camera.focalLength !== undefined ? camera.focalLength : 24,
-          height: camera.height !== undefined ? camera.height : 1700
-        });
-      } else {
-        // If no focal point, just update position
-        setCamera({
-          ...camera,
-          position: position
-        });
-      }
-      
-      // Force an immediate redraw
-      drawRoom();
-    }
-  };
-  
-  
   
   const updateCameraRotation = (rotation: number) => {
     if (camera) {
@@ -1393,6 +1395,7 @@ const RoomDesigner: React.FC = () => {
       drawRoom();
     }
   };
+
   
   const calculateRotationHandlePosition = (position: Point, rotation: number, distance: number): Point => {
     const rotationRad = (rotation * Math.PI) / 180;
@@ -3866,7 +3869,8 @@ const formatCameraData = (camera) => {
       z: Math.round(camera.height || 1700) // Include height as z coordinate
     },
     rotation: Math.round(camera.rotation),
-    focalLength: Math.round(camera.focalLength || 24) // Include focal length
+    focalLength: Math.round(camera.focalLength || 24), // Include focal length
+    shiftY: camera.shiftY !== undefined ? camera.shiftY : -0.2 // Include shiftY with default
   };
 };
 
@@ -4475,8 +4479,9 @@ const parseCameraData = (cameraData) => {
       y: cameraData.position?.y || 0
     },
     rotation: cameraData.rotation || 0,
-    focalLength: cameraData.focalLength || 24, // Parse focal length with default
-    height: cameraData.position?.z || 1700, // Get height from position.z with default
+    focalLength: cameraData.focalLength || 24,
+    height: cameraData.position?.z || 1700,
+    shiftY: cameraData.shiftY !== undefined ? cameraData.shiftY : -0.2, // Parse shiftY from JSON
     isDragging: false,
     isRotating: false
   };
@@ -9618,6 +9623,20 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                 </tr>
                 <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    Height (mm)
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <input
+                      type="number"
+                      value={Math.round(camera.height || 1700)}
+                      onChange={(e) => updateCameraHeight(Number(e.target.value))}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                      min="0"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                     Rotation (°)
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -9682,18 +9701,18 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                 </tr>
                 <tr>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    Height (mm)
+                    Shift Y
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <input
                       type="number"
-                      value={Math.round(camera.height || 1700)}
-                      onChange={(e) => updateCameraHeight(Number(e.target.value))}
+                      value={camera.shiftY !== undefined ? camera.shiftY : -0.2}
+                      onChange={(e) => updateCameraShiftY(Number(e.target.value))}
                       className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      min="0"
+                      step="0.1"
                     />
                   </td>
-                </tr>
+                </tr>               
               </tbody>
             </table>
           </div>
