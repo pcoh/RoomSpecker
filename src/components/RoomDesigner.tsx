@@ -764,7 +764,7 @@ const RoomDesigner: React.FC = () => {
         height: 2032,                      // Default height
         frameThickness: 20,                // Default frame thickness
         frameWidth: 100,                   // Default frame width
-        material: "WhiteOak_SlipMatch_Vert" // Default material
+        material: "PaintGrade_Baseboard" // Default material
       };
       
       console.log("New door object:", JSON.stringify(newDoor));
@@ -9203,9 +9203,15 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                         onChange={(e) => updateDoorMaterial(activeRoom.id, index, e.target.value)}
                         className="w-40 px-2 py-1 border border-gray-300 rounded"
                       >
-                        <option value="WhiteOak_SlipMatch_Vert">WhiteOak SlipMatch Vert</option>
-                        <option value="WhiteOak_SlipMatch">WhiteOak SlipMatch</option>
-                        <option value="Paint - Gray">Paint - Gray</option>
+                        <option value="PaintGrade_Baseboard">PaintGrade Baseboard</option>
+                        <option value="Walnut_Muted_BookMatch">Walnut Muted BookMatch</option>
+                        <option value="Walnut_Natural_BookMatch">Walnut Natural BookMatch</option>
+                        <option value="Walnut_Roasted_BookMatch">Walnut Roasted BookMatch</option>
+                        <option value="WhiteOak_Basic_SlipMatch">WhiteOak Basic SlipMatch</option>
+                        <option value="WhiteOak_FineDark_RandomMatch">WhiteOak FineDark RandomMatch</option>
+                        <option value="WhiteOak_Muted_SlipMatch">WhiteOak Muted SlipMatch</option>
+                        <option value="WhiteOak_RandomMatchTiger">WhiteOak RandomMatchTiger</option>
+                        <option value="WhiteOak_Whitened_SlipMatch">WhiteOak Whitened SlipMatch</option>
                       </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
