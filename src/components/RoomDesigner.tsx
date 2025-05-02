@@ -1479,7 +1479,10 @@ const RoomDesigner: React.FC = () => {
         position: camera.position,
         rotation: ((angle % 360) + 360) % 360,
         isDragging: camera.isDragging,
-        isRotating: camera.isRotating
+        isRotating: camera.isRotating,
+        focalLength: camera.focalLength, // Preserve the focal length
+        height: camera.height, // Preserve the height
+        shiftY: camera.shiftY // Preserve the shiftY value
       });
     }
     
@@ -1511,7 +1514,10 @@ const RoomDesigner: React.FC = () => {
           position: camera.position, // Explicitly use the camera's existing position
           rotation: ((angle % 360) + 360) % 360,
           isDragging: camera.isDragging,
-          isRotating: camera.isRotating
+          isRotating: camera.isRotating,
+          focalLength: camera.focalLength, // Preserve the focal length
+          height: camera.height, // Preserve the height
+          shiftY: camera.shiftY // Preserve the shiftY value
         });
       }
       
