@@ -259,7 +259,7 @@ const RoomDesigner: React.FC = () => {
   const [newCabinetType, setNewCabinetType] = useState<string>('');
   const [newCabinetWidth, setNewCabinetWidth] = useState<number>(600); // Default width
   const [newCabinetHingeRight, setNewCabinetHingeRight] = useState<boolean>(true);
-  const [newCabinetMaterial, setNewCabinetMaterial] = useState<string>('WhiteOak_SlipMatch');
+  const [newCabinetMaterial, setNewCabinetMaterial] = useState<string>('PaintGrade');
   const True = true;
   const False = false;
   const [editingRoomHeights, setEditingRoomHeights] = useState<{ [key: string]: string }>({});
@@ -764,7 +764,7 @@ const RoomDesigner: React.FC = () => {
         height: 2032,                      // Default height
         frameThickness: 20,                // Default frame thickness
         frameWidth: 100,                   // Default frame width
-        material: "PaintGrade_Baseboard" // Default material
+        material: "PaintGrade"            // Changed default material
       };
       
       console.log("New door object:", JSON.stringify(newDoor));
@@ -2777,15 +2777,15 @@ const RoomDesigner: React.FC = () => {
   };
 
   // Start adding a new cabinet run
-const startAddingRun = () => {
-  if (!rooms.some(room => room.isMain && room.isComplete)) {
-    alert('Please complete the main room first');
-    return;
-  }
-  
-  setIsAddingRun(true);
-  setNewRunType('Base'); // Default to Base type
-};
+  const startAddingRun = () => {
+    if (!rooms.some(room => room.isMain && room.isComplete)) {
+      alert('Please complete the main room first');
+      return;
+    }
+    
+    setIsAddingRun(true);
+    setNewRunType('Base'); // Default to Base type
+  };
 
 // Function to create a new cabinet run at the specified position
 const createCabinetRun = (position: Point) => {
@@ -3265,7 +3265,7 @@ const addCabinetToRun = (runId) => {
     cabinet_type: cabinetType,
     cabinet_width: width,
     hinge_right: newCabinetHingeRight,
-    material_doors: newCabinetMaterial || "WhiteOak_Basic_SlipMatch",
+    material_doors: newCabinetMaterial || "PaintGrade",  // Changed default material
     position: position,
     // Add default values for floating shelf parameters
     floating_shelf_depth: 200,
@@ -4233,7 +4233,7 @@ const parseRoomData = (roomData) => {
         height: roomData.doors.heights?.[i] || 2032,
         frameThickness: roomData.doors.frameThicknesses?.[i] || 20,
         frameWidth: roomData.doors.frameWidths?.[i] || 100,
-        material: roomData.doors.materials?.[i] || "WhiteOak_SlipMatch_Vert"
+        material: roomData.doors.materials?.[i] || "PaintGrade"  // Changed default material
       };
       
       // Only add doors for walls that we're actually creating
@@ -4467,7 +4467,7 @@ const parseCabinetData = (cabinetData) => {
     cabinet_type: cabinetData.cabinet_type || 'Base - 2-Drawer',
     cabinet_width: Number(cabinetData.cabinet_width) || 600,
     hinge_right: Boolean(cabinetData.hinge_right),
-    material_doors: cabinetData.material_doors || 'WhiteOak_SlipMatch',
+    material_doors: cabinetData.material_doors || 'PaintGrade', // Changed default material
     position: Number(cabinetData.position) || 0,
     // Add default values for floating shelf parameters if needed
     floating_shelf_depth: Number(cabinetData.floating_shelf_depth) || 200,
@@ -7785,7 +7785,7 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
     ctx.rect(cabinetX, 0, cabinetWidth, cabinetDepth);
     ctx.fillStyle = selectedCabinet === cabinet.id 
       ? 'rgba(252, 211, 77, 0.3)' // Amber highlight for selected cabinet
-      : cabinet.material_doors === 'WhiteOak_SlipMatch'
+      : cabinet.material_doors === 'PaintGrade'
         ? 'rgba(253, 230, 190, 0.6)' // Light wood color for oak
         : 'rgba(229, 231, 235, 0.6)'; // Gray color for painted cabinets
     ctx.fill();
