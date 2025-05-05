@@ -764,7 +764,7 @@ const RoomDesigner: React.FC = () => {
         height: 2032,                      // Default height
         frameThickness: 20,                // Default frame thickness
         frameWidth: 100,                   // Default frame width
-        material: "PaintGrade"            // Changed default material
+        material: "PaintGrade_Trim"            // Changed default material
       };
       
       console.log("New door object:", JSON.stringify(newDoor));
@@ -9209,7 +9209,7 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                         onChange={(e) => updateDoorMaterial(activeRoom.id, index, e.target.value)}
                         className="w-40 px-2 py-1 border border-gray-300 rounded"
                       >
-                        <option value="PaintGrade_Baseboard">PaintGrade Baseboard</option>
+                        <option value="PaintGrade_Trim">PaintGrade</option>
                         <option value="Walnut_Muted_BookMatch">Walnut Muted BookMatch</option>
                         <option value="Walnut_Natural_BookMatch">Walnut Natural BookMatch</option>
                         <option value="Walnut_Roasted_BookMatch">Walnut Roasted BookMatch</option>
