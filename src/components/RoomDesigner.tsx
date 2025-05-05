@@ -54,7 +54,7 @@ interface Window {
   height: number;
   sillHeight: number;
   position: number;
-  type: 'single' | 'double'; // New property
+  type: 'single' | 'double' | 'none';
 }
 
 interface ContextMenuState {
@@ -922,7 +922,7 @@ const RoomDesigner: React.FC = () => {
     ));
   };
 
-  const updateWindowType = (roomId: string, windowIndex: number, newType: 'single' | 'double') => {
+  const updateWindowType = (roomId: string, windowIndex: number, newType: 'single' | 'double' | 'none') => {
     setRooms(rooms.map(room => {
       if (room.id !== roomId) return room;
   
@@ -7483,12 +7483,28 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
       const startScreen = worldToScreen(window.startPoint.x, window.startPoint.y);
       const endScreen = worldToScreen(window.endPoint.x, window.endPoint.y);
       
+      // Use a different style for 'none' type windows
+      const isNoneType = window.type === 'none';
+      
       ctx.beginPath();
       ctx.moveTo(startScreen.x, startScreen.y);
       ctx.lineTo(endScreen.x, endScreen.y);
-      ctx.strokeStyle = '#3b82f6';
+      
+      // Change color for 'none' type
+      ctx.strokeStyle = isNoneType ? '#aaaaaa' : '#3b82f6';
+      
+      // Use dashed line for 'none' type
+      if (isNoneType) {
+        ctx.setLineDash([5, 3]); // Dashed line
+      } else {
+        ctx.setLineDash([]); // Solid line
+      }
+      
       ctx.lineWidth = 3;
       ctx.stroke();
+      
+      // Reset dash pattern
+      ctx.setLineDash([]);
       
       const isStartSelected = selectedWindowPoint?.roomId === room.id && 
                             selectedWindowPoint.windowIndex === index && 
@@ -7500,22 +7516,25 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
       
       ctx.beginPath();
       ctx.arc(startScreen.x, startScreen.y, WINDOW_POINT_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = isStartSelected ? '#dc2626' : '#3b82f6';
+      ctx.fillStyle = isStartSelected ? '#dc2626' : (isNoneType ? '#aaaaaa' : '#3b82f6');
       ctx.fill();
       
       ctx.beginPath();
       ctx.arc(endScreen.x, endScreen.y, WINDOW_POINT_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = isEndSelected ? '#dc2626' : '#3b82f6';
+      ctx.fillStyle = isEndSelected ? '#dc2626' : (isNoneType ? '#aaaaaa' : '#3b82f6');
       ctx.fill();
       
       const midX = (startScreen.x + endScreen.x) / 2;
       const midY = (startScreen.y + endScreen.y) / 2;
       
       ctx.font = '12px Arial';
-      ctx.fillStyle = '#3b82f6';
+      ctx.fillStyle = isNoneType ? '#aaaaaa' : '#3b82f6';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${Math.round(window.width)}mm × ${Math.round(window.height)}mm`, midX, midY - 15);
+      
+      // Add type indicator to label for clarity
+      const typeLabel = isNoneType ? ' (opening)' : '';
+      ctx.fillText(`${Math.round(window.width)}mm × ${Math.round(window.height)}mm${typeLabel}`, midX, midY - 15);
     });
   };
   
@@ -9314,14 +9333,15 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <select
-                        value={window.type || 'single'}
-                        onChange={(e) => updateWindowType(activeRoom.id, index, e.target.value as 'single' | 'double')}
-                        className="w-24 px-2 py-1 border border-gray-300 rounded"
-                      >
-                        <option value="single">Single</option>
-                        <option value="double">Double</option>
-                      </select>
+                    <select
+                      value={window.type || 'single'}
+                      onChange={(e) => updateWindowType(activeRoom.id, index, e.target.value as 'single' | 'double' | 'none')}
+                      className="w-24 px-2 py-1 border border-gray-300 rounded"
+                    >
+                      <option value="single">Single</option>
+                      <option value="double">Double</option>
+                      <option value="none">None</option>
+                    </select>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <button
