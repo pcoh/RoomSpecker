@@ -54,7 +54,7 @@ interface Window {
   height: number;
   sillHeight: number;
   position: number;
-  type: 'single' | 'double' | 'none';
+  type: 'single' | 'double_open' | 'double_closed' |'none';
 }
 
 interface ContextMenuState {
@@ -922,7 +922,7 @@ const RoomDesigner: React.FC = () => {
     ));
   };
 
-  const updateWindowType = (roomId: string, windowIndex: number, newType: 'single' | 'double' | 'none') => {
+  const updateWindowType = (roomId: string, windowIndex: number, newType: 'single' | 'double_open' | 'double_closed' | 'none') => {
     setRooms(rooms.map(room => {
       if (room.id !== roomId) return room;
   
@@ -3806,7 +3806,7 @@ const formatRoomData = (room: Room, mappedId: number): any => {
       heights: remappedDoors.map(door => Math.round(door.height || 2032)),
       frameThicknesses: remappedDoors.map(door => Math.round(door.frameThickness || 20)),
       frameWidths: remappedDoors.map(door => Math.round(door.frameWidth || 100)),
-      materials: remappedDoors.map(door => door.material || "WhiteOak_SlipMatch_Vert")
+      materials: remappedDoors.map(door => door.material || "PaintGrade_Trim")
     },
     windows: {
       count: remappedWindows.length,
@@ -4292,6 +4292,15 @@ const parseRoomData = (roomData) => {
         }
       }
       
+      // Get the window type and ensure it's a valid value
+      let windowType = roomData.windows.types?.[i] || 'single';
+      
+      // Validate that the type is one of the allowed values
+      if (!['single', 'double_open', 'double_closed', 'none'].includes(windowType)) {
+        // If we have an invalid or old type value, default to 'single'
+        windowType = 'single';
+      }
+      
       // Create the window object with proper typing
       const window: Window = {
         wallIndex,
@@ -4301,7 +4310,7 @@ const parseRoomData = (roomData) => {
         endPoint,
         height: roomData.windows.heights?.[i] || DEFAULT_WINDOW_HEIGHT,
         sillHeight: roomData.windows.sillHeights?.[i] || DEFAULT_WINDOW_SILL_HEIGHT,
-        type: roomData.windows.types?.[i] || 'single'
+        type: windowType
       };
       
       // Similar to doors, only add windows for walls that we're actually creating
@@ -7533,7 +7542,15 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
       ctx.textBaseline = 'middle';
       
       // Add type indicator to label for clarity
-      const typeLabel = isNoneType ? ' (opening)' : '';
+      let typeLabel = '';
+      if (isNoneType) {
+        typeLabel = ' (opening)';
+      } else if (window.type === 'double_open') {
+        typeLabel = ' (dbl open)';
+      } else if (window.type === 'double_closed') {
+        typeLabel = ' (dbl closed)';
+      }
+      
       ctx.fillText(`${Math.round(window.width)}mm × ${Math.round(window.height)}mm${typeLabel}`, midX, midY - 15);
     });
   };
@@ -9335,11 +9352,12 @@ const handleAngleChange = (roomId: string, index: number, value: string) => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <select
                       value={window.type || 'single'}
-                      onChange={(e) => updateWindowType(activeRoom.id, index, e.target.value as 'single' | 'double' | 'none')}
+                      onChange={(e) => updateWindowType(activeRoom.id, index, e.target.value as 'single' | 'double_open' | 'double_closed' | 'none')}
                       className="w-24 px-2 py-1 border border-gray-300 rounded"
                     >
                       <option value="single">Single</option>
-                      <option value="double">Double</option>
+                      <option value="double_open">Double Open</option>
+                      <option value="double_closed">Double Closed</option>
                       <option value="none">None</option>
                     </select>
                     </td>
